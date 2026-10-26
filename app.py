@@ -32,12 +32,12 @@ def load_data():
         return []
 
 def add_task_db(category, title, subtasks, start_date, due_date):
-    """새로운 업무, 세부 체크리스트 및 일정 추가 (메모 기본값 포함)"""
+    """새로운 업무, 세부 체크리스트 및 일정 추가 (세부 업무별 날짜 기본값 포함)"""
     new_row = {
         "category": category,
         "title": title,
         "status": "대기",
-        "subtasks": [{"name": item, "done": False, "memo": ""} for item in subtasks],
+        "subtasks": [{"name": item, "done": False, "memo": "", "start_date": str(start_date) if start_date else None, "end_date": str(due_date) if due_date else None} for item in subtasks],
         "start_date": str(start_date) if start_date else None,
         "due_date": str(due_date) if due_date else None,
         "end_date": None
@@ -88,7 +88,7 @@ def _update_and_save(task_id, subtasks):
 
 def _clear_widget_keys(task_id):
     """위젯 충돌 방지를 위해 해당 업무의 세션 상태 키 모두 초기화"""
-    keys_to_del = [k for k in st.session_state.keys() if k.startswith(f"edit_chk_{task_id}_") or k.startswith(f"edit_memo_{task_id}_")]
+    keys_to_del = [k for k in st.session_state.keys() if k.startswith(f"edit_chk_{task_id}_") or k.startswith(f"edit_memo_{task_id}_") or k.startswith(f"edit_sub_start_{task_id}_") or k.startswith(f"edit_sub_end_{task_id}_")]
     for k in keys_to_del:
         del st.session_state[k]
 
@@ -101,7 +101,7 @@ st.markdown("""
 <style>
     textarea {
         resize: vertical !important;
-        min-height: 120px !important;
+        min-height: 100px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -156,9 +156,9 @@ with tab1:
             st.markdown(
                 f"""
                 <div style="padding: 20px; border-radius: 10px; border: 2px solid #4CAF50; background-color: #f1f8e9; margin-bottom: 20px;">
-                    <h3 style="margin-top: 0; color: #2e7d32;">⚙️ 세부 업무 및 일정 편집 모드</h3>
+                    <h3 style="margin-top: 0; color: #2e7d32;">⚙️ 세부 업무, 일정 및 메모 편집 모드</h3>
                     <p style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">[{current_task['category']}] {current_task['title']}</p>
-                    <p style="color: #555; font-size: 13px;">일정 수정, 체크, 여러 줄 추진계획 메모 작성, 순서 변경(⬆️, ⬇️), 삭제(❌)를 자유롭게 진행하세요.</p>
+                    <p style="color: #555; font-size: 13px;">전체 일정 수정, 세부 업무별 시작일/종료일 지정, 체크, 추진계획 메모 작성, 순서 변경(⬆️, ⬇️), 삭제(❌)를 자유롭게 진행하세요.</p>
                 </div>
                 """, 
                 unsafe_allow_html=True
@@ -166,33 +166,37 @@ with tab1:
             
             task_id = current_task["id"]
             
-            # 일정 수정 영역
+            # 전체 일정 수정 영역
             col_ed1, col_ed2, col_ed3 = st.columns(3)
             with col_ed1:
                 cur_start = datetime.strptime(current_task["start_date"], "%Y-%m-%d").date() if current_task.get("start_date") else date.today()
-                new_start = st.date_input("시작일 수정", value=cur_start, key=f"edit_start_{task_id}")
+                new_start = st.date_input("전체 시작일 수정", value=cur_start, key=f"edit_start_{task_id}")
             with col_ed2:
                 cur_due = datetime.strptime(current_task["due_date"], "%Y-%m-%d").date() if current_task.get("due_date") else date.today()
-                new_due = st.date_input("마감예정일 수정", value=cur_due, key=f"edit_due_{task_id}")
+                new_due = st.date_input("전체 마감예정일 수정", value=cur_due, key=f"edit_due_{task_id}")
             with col_ed3:
                 cur_end = datetime.strptime(current_task["end_date"], "%Y-%m-%d").date() if current_task.get("end_date") else None
-                new_end = st.date_input("종료일 (실제 완료일)", value=cur_end, key=f"edit_end_{task_id}", help="완료된 경우 자동 입력되거나 직접 수정할 수 있습니다.")
+                new_end = st.date_input("전체 종료일 (실제 완료일)", value=cur_end, key=f"edit_end_{task_id}", help="완료된 경우 자동 입력되거나 직접 수정할 수 있습니다.")
 
             if new_start != cur_start or new_due != cur_due or new_end != cur_end:
                 update_task_db(task_id, current_task["subtasks"], current_task["status"], start_date=new_start, due_date=new_due, end_date=new_end)
 
             st.markdown("---")
-            st.subheader("📝 세부 업무별 체크리스트 & 추진계획 메모 관리")
+            st.subheader("📝 세부 업무별 체크리스트, 일정 및 추진계획 메모 관리")
 
-            # 데이터 무결성 보정
+            # 데이터 무결성 보정 (기존 데이터에 세부 날짜가 없는 경우 처리)
             subtasks = []
+            default_sub_start = current_task.get("start_date") or str(date.today())
+            default_sub_end = current_task.get("due_date") or str(date.today())
+
             for s in current_task["subtasks"]:
                 if isinstance(s, str):
-                    subtasks.append({"name": s, "done": False, "memo": ""})
+                    subtasks.append({"name": s, "done": False, "memo": "", "start_date": default_sub_start, "end_date": default_sub_end})
                 else:
                     item_dict = dict(s)
-                    if "memo" not in item_dict:
-                        item_dict["memo"] = ""
+                    if "memo" not in item_dict: item_dict["memo"] = ""
+                    if "start_date" not in item_dict or not item_dict["start_date"]: item_dict["start_date"] = default_sub_start
+                    if "end_date" not in item_dict or not item_dict["end_date"]: item_dict["end_date"] = default_sub_end
                     subtasks.append(item_dict)
             
             if not subtasks:
@@ -202,6 +206,8 @@ with tab1:
             for idx, sub in enumerate(subtasks):
                 chk_key = f"edit_chk_{task_id}_{idx}"
                 memo_key = f"edit_memo_{task_id}_{idx}"
+                sub_start_key = f"edit_sub_start_{task_id}_{idx}"
+                sub_end_key = f"edit_sub_end_{task_id}_{idx}"
                 
                 if chk_key not in st.session_state:
                     st.session_state[chk_key] = sub["done"]
@@ -209,14 +215,14 @@ with tab1:
                     st.session_state[memo_key] = sub["memo"]
 
                 st.markdown(f"**[{idx+1}] 세부 항목 컨트롤**")
-                rc1, rc2, rc3, rc4 = st.columns([5, 1, 1, 1])
                 
+                # 체크박스와 순서 변경/삭제 버튼 배치
+                rc1, rc2, rc3, rc4 = st.columns([5, 1, 1, 1])
                 with rc1:
                     new_done = st.checkbox(sub["name"], key=chk_key)
                     if new_done != sub["done"]:
                         subtasks[idx]["done"] = new_done
                         _update_and_save(task_id, subtasks)
-                        
                 with rc2:
                     if idx > 0:
                         if st.button("⬆️", key=f"edit_up_{task_id}_{idx}"):
@@ -224,7 +230,6 @@ with tab1:
                             _update_and_save(task_id, subtasks)
                             _clear_widget_keys(task_id)
                             st.rerun()
-                            
                 with rc3:
                     if idx < len(subtasks) - 1:
                         if st.button("⬇️", key=f"edit_down_{task_id}_{idx}"):
@@ -232,13 +237,26 @@ with tab1:
                             _update_and_save(task_id, subtasks)
                             _clear_widget_keys(task_id)
                             st.rerun()
-                            
                 with rc4:
                     if st.button("❌", key=f"edit_del_{task_id}_{idx}"):
                         subtasks.pop(idx)
                         _update_and_save(task_id, subtasks)
                         _clear_widget_keys(task_id)
                         st.rerun()
+
+                # 세부 업무별 시작일 / 종료일 지정 컬럼
+                sc1, sc2 = st.columns(2)
+                with sc1:
+                    cur_s_date = datetime.strptime(sub["start_date"], "%Y-%m-%d").date() if sub.get("start_date") else date.today()
+                    new_sub_start = st.date_input("세부 시작일", value=cur_s_date, key=sub_start_key)
+                with sc2:
+                    cur_e_date = datetime.strptime(sub["end_date"], "%Y-%m-%d").date() if sub.get("end_date") else date.today()
+                    new_sub_end = st.date_input("세부 종료일", value=cur_e_date, key=sub_end_key)
+
+                if str(new_sub_start) != sub.get("start_date") or str(new_sub_end) != sub.get("end_date"):
+                    subtasks[idx]["start_date"] = str(new_sub_start)
+                    subtasks[idx]["end_date"] = str(new_sub_end)
+                    update_task_db(task_id, subtasks, current_task["status"])
 
                 # 추진계획 메모 입력 필드
                 new_memo = st.text_area("추진계획 메모", value=sub["memo"], key=memo_key, placeholder="이 세부 업무와 관련된 추진계획이나 메모를 여러 줄로 자유롭게 입력하세요")
@@ -251,10 +269,23 @@ with tab1:
             # 새 세부 업무 추가 폼
             with st.form(key=f"edit_add_form_{task_id}", clear_on_submit=True):
                 new_sub_name = st.text_input("새 세부 업무 추가", placeholder="세부 업무명 입력")
+                
+                acol1, acol2 = st.columns(2)
+                with acol1:
+                    new_sub_sdate = st.date_input("새 세부 시작일", value=date.today())
+                with acol2:
+                    new_sub_edate = st.date_input("새 세부 종료일", value=date.today())
+
                 submitted_sub = st.form_submit_button("➕ 세부 업무 추가하기", use_container_width=True)
                 if submitted_sub:
                     if new_sub_name.strip():
-                        subtasks.append({"name": new_sub_name.strip(), "done": False, "memo": ""})
+                        subtasks.append({
+                            "name": new_sub_name.strip(),
+                            "done": False,
+                            "memo": "",
+                            "start_date": str(new_sub_sdate),
+                            "end_date": str(new_sub_edate)
+                        })
                         _update_and_save(task_id, subtasks)
                         _clear_widget_keys(task_id)
                         st.success("세부 업무가 추가되었습니다!")
@@ -321,12 +352,11 @@ with tab1:
                     <span style="font-size: 16px; font-weight: bold; margin-left: 10px;">{task['title']}</span>
                     <span style="color: #666; font-size: 14px; margin-left: 10px;">({task['status']} - {progress_percent}%)</span>
                     <div style="margin-top: 8px; font-size: 13px; color: #555;">
-                        📅 <b>시작일:</b> {start_str} &nbsp;|&nbsp; ⏳ <b>마감예정일:</b> {due_str} &nbsp;|&nbsp; ✅ <b>종료일:</b> {end_str}
+                        📅 <b>전체 시작일:</b> {start_str} &nbsp;|&nbsp; ⏳ <b>전체 마감예정일:</b> {due_str} &nbsp;|&nbsp; ✅ <b>전체 종료일:</b> {end_str}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # 프로그레스바 및 편집/삭제 버튼 가로 배치
                 col_bar, col_btn1, col_btn2 = st.columns([4, 1, 1])
                 with col_bar:
                     st.progress(progress)
@@ -374,7 +404,7 @@ with tab2:
 
         st.markdown("---")
         st.subheader("📥 전체 업무 리스트 엑셀 다운로드")
-        st.caption("다운로드할 업무 상태를 체크박스로 선택하고, 동일 업무의 상위 정보가 셀 병합된 깔끔한 엑셀 파일을 다운로드하세요.")
+        st.caption("다운로드할 업무 상태를 체크박스로 선택하고, 세부 업무별 일정 및 셀 병합이 적용된 엑셀 파일을 다운로드하세요.")
 
         # 상태 선택 체크박스 레이아웃 (가로 배치)
         st.write("**다운로드할 업무 상태 선택**")
@@ -386,16 +416,11 @@ with tab2:
         with chk_col3:
             sel_completed = st.checkbox("완료", value=True)
 
-        # 선택된 체크박스에 따른 상태 리스트 구성
         selected_statuses = []
-        if sel_pending:
-            selected_statuses.append("대기")
-        if sel_progress:
-            selected_statuses.append("진행중")
-        if sel_completed:
-            selected_statuses.append("완료")
+        if sel_pending: selected_statuses.append("대기")
+        if sel_progress: selected_statuses.append("진행중")
+        if sel_completed: selected_statuses.append("완료")
 
-        # 선택된 상태에 따른 필터링
         filtered_export_tasks = [t for t in tasks if t.get("status") in selected_statuses]
 
         if not filtered_export_tasks:
@@ -408,17 +433,21 @@ with tab2:
                 done_sub = sum(1 for s in subtasks if isinstance(s, dict) and s.get("done"))
                 progress_percent = int((done_sub / total_sub) * 100) if total_sub > 0 else (100 if t["status"] == "완료" else 0)
                 
-                # 세부 업무 항목별로 각각 별도의 행(Row) 생성
+                # 세부 업무 항목별로 각각 별도의 행(Row) 생성 및 세부 일정 포함
                 if subtasks:
                     for s in subtasks:
                         if isinstance(s, dict):
                             sub_name = s.get('name', '')
                             sub_done = "완료" if s.get('done') else "진행중"
                             sub_memo = s.get('memo', '')
+                            sub_sdate = s.get('start_date', '')
+                            sub_edate = s.get('end_date', '')
                         else:
                             sub_name = str(s)
                             sub_done = "진행중"
                             sub_memo = ""
+                            sub_sdate = ""
+                            sub_edate = ""
 
                         excel_data.append({
                             "ID": t["id"],
@@ -426,11 +455,13 @@ with tab2:
                             "업무 제목": t["title"],
                             "전체 상태": t["status"],
                             "전체 진행률(%)": f"{progress_percent}%",
-                            "시작일": t.get("start_date", ""),
-                            "마감예정일": t.get("due_date", ""),
-                            "종료일": t.get("end_date", ""),
+                            "전체 시작일": t.get("start_date", ""),
+                            "전체 마감예정일": t.get("due_date", ""),
+                            "전체 종료일": t.get("end_date", ""),
                             "세부 업무명": sub_name,
                             "세부 완료 여부": sub_done,
+                            "세부 시작일": sub_sdate,
+                            "세부 종료일": sub_edate,
                             "추진계획 메모": sub_memo
                         })
                 else:
@@ -440,11 +471,13 @@ with tab2:
                         "업무 제목": t["title"],
                         "전체 상태": t["status"],
                         "전체 진행률(%)": f"{progress_percent}%",
-                        "시작일": t.get("start_date", ""),
-                        "마감예정일": t.get("due_date", ""),
-                        "종료일": t.get("end_date", ""),
+                        "전체 시작일": t.get("start_date", ""),
+                        "전체 마감예정일": t.get("due_date", ""),
+                        "전체 종료일": t.get("end_date", ""),
                         "세부 업무명": "-",
                         "세부 완료 여부": "-",
+                        "세부 시작일": "",
+                        "세부 종료일": "",
                         "추진계획 메모": ""
                     })
 
@@ -459,15 +492,13 @@ with tab2:
             wb = openpyxl.load_workbook(output)
             ws = wb.active
             
-            # 셀 스타일 설정 (모든 셀 줄바꿈 및 상단 정렬)
+            # 셀 스타일 설정 (모든 셀 줄바꿈 및 정렬)
             for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
                 for cell in row:
-                    cell.alignment = openpyxl.styles.Alignment(wrap_text=True, vertical="center", horizontal="center" if cell.column in [1, 4, 5, 6, 7, 8, 10] else "left")
+                    cell.alignment = openpyxl.styles.Alignment(wrap_text=True, vertical="center", horizontal="center" if cell.column in [1, 4, 5, 6, 7, 8, 10, 11, 12] else "left")
 
-            # ID 기준(1열)으로 동일한 업무 행들을 찾아 셀 병합 실행
-            # 열 번호: 1(ID), 2(업무구분), 3(업무제목), 4(전체상태), 5(전체진행률), 6(시작일), 7(마감예정일), 8(종료일)
+            # ID 기준(1열)으로 동일한 상위 업무 행들을 찾아 셀 병합 실행 (열 1~8 병합)
             merge_cols = [1, 2, 3, 4, 5, 6, 7, 8]
-            
             start_row = 2
             max_row = ws.max_row
             
@@ -475,18 +506,16 @@ with tab2:
                 current_id = ws.cell(row=start_row, column=1).value
                 end_row = start_row
                 
-                # 같은 ID를 가진 연속된 행 찾기
                 while end_row + 1 <= max_row and ws.cell(row=end_row + 1, column=1).value == current_id:
                     end_row += 1
                 
-                # 동일한 ID 범위가 2행 이상인 경우 셀 병합 수행
                 if end_row > start_row:
                     for col in merge_cols:
                         ws.merge_cells(start_row=start_row, start_column=col, end_row=end_row, end_column=col)
                 
                 start_row = end_row + 1
 
-            # 테두리 및 정렬 깔끔하게 맞추기 위한 추가 보정
+            # 테두리 설정
             thin_border = openpyxl.styles.Border(
                 left=openpyxl.styles.Side(style='thin', color='CCCCCC'),
                 right=openpyxl.styles.Side(style='thin', color='CCCCCC'),
@@ -504,9 +533,9 @@ with tab2:
 
             today_str = datetime.now().strftime("%Y%m%d")
             st.download_button(
-                label="📊 셀 병합된 세부 업무별 엑셀 파일 다운로드 (.xlsx)",
+                label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_셀병합_{today_str}.xlsx",
+                file_name=f"업무진행상황_세부일정포함_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
