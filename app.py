@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
-    page_title="개인 업무 진행 상황 관리",
+    page_title="HYO 업무 진행 상황 관리",
     page_icon="✅",
     layout="wide"
 )
