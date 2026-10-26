@@ -107,7 +107,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 앱 UI 레이아웃 시작 ---
-st.title("✅ HYO'S 진행 상황 관리 앱")
+st.title("✅ HYO'S 업무 진행 상황 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
