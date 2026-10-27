@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
-    page_title="횻 업무 진행 상황 관리",
+    page_title="개인 업무 진행 상황 관리",
     page_icon="✅",
     layout="wide"
 )
@@ -111,15 +111,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 앱 UI 레이아웃 시작 ---
-st.title("✅ 횻 업무 진행 관리 앱")
+st.title("✅ 개인 업무 진행 상황 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
+
+# 고정 업무 구분 리스트 정의
+CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
 
 # 4. 사이드바: 새 업무 등록 폼
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
-        category = st.text_input("업무 구분", placeholder="예: 기획, 개발, 보고")
+        category = st.selectbox("업무 구분", CATEGORY_OPTIONS)
         task_title = st.text_input("업무 제목", placeholder="예: 3분기 실적 보고서 작성")
         
         col_d1, col_d2 = st.columns(2)
@@ -136,14 +139,14 @@ with st.sidebar:
         submitted = st.form_submit_button("업무 추가하기", use_container_width=True)
         
         if submitted:
-            if category.strip() and task_title.strip():
+            if task_title.strip():
                 with st.spinner("새 업무를 등록하는 중입니다..."):
                     sub_items = [s.strip() for s in subtasks_text.split("\n") if s.strip()]
-                    add_task_db(category.strip(), task_title.strip(), sub_items, start_date, due_date)
+                    add_task_db(category, task_title.strip(), sub_items, start_date, due_date)
                 st.success("새 업무가 추가되었습니다!")
                 st.rerun()
             else:
-                st.warning("업무 구분과 업무 제목을 모두 입력해주세요.")
+                st.warning("업무 제목을 입력해주세요.")
 
 # 데이터 불러오기
 with st.spinner("데이터를 불러오는 중입니다..."):
@@ -304,8 +307,9 @@ with tab1:
     else:
         f_col1, f_col2 = st.columns(2)
         with f_col1:
-            categories = ["전체"] + list(set(t["category"] for t in tasks))
-            selected_cat = st.selectbox("📂 구분별 필터", categories, key="main_cat_filter")
+            # 요청하신 업무구분 리스트와 '전체' 포함
+            filter_options = ["전체"] + CATEGORY_OPTIONS
+            selected_cat = st.selectbox("📂 업무구분 필터", filter_options, key="main_cat_filter")
         with f_col2:
             sort_option = st.selectbox(
                 "🔄 정렬 기준",
@@ -318,10 +322,9 @@ with tab1:
         status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
         def render_task_cards(target_statuses, tab_prefix):
-            res = tasks if selected_cat == "전체" else [t for t in tasks if t["category"] == selected_cat]
+            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category") == selected_cat]
             res = [t for t in res if t["status"] in target_statuses]
 
-            # 완료 탭인 경우 전체 종료일 기준 내림차순(최신순) 고정 정렬 적용
             if target_statuses == ["완료"]:
                 res = sorted(res, key=lambda x: x.get("end_date") or "", reverse=True)
             else:
@@ -421,9 +424,9 @@ with tab2:
 
         st.markdown("---")
         st.subheader("📂 업무 구분별 요약")
-        cat_map = {}
+        cat_map = {cat: {"total": 0, "completed": 0} for cat in CATEGORY_OPTIONS}
         for t in tasks:
-            cat = t["category"]
+            cat = t.get("category", "기타")
             if cat not in cat_map:
                 cat_map[cat] = {"total": 0, "completed": 0}
             cat_map[cat]["total"] += 1
@@ -562,7 +565,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_완료정렬반영_{today_str}.xlsx",
+                file_name=f"업무진행상황_구분선택반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
