@@ -170,7 +170,6 @@ with tab1:
             
             task_id = current_task["id"]
             
-            # 전체 일정 수정 영역
             col_ed1, col_ed2, col_ed3 = st.columns(3)
             with col_ed1:
                 cur_start = datetime.strptime(current_task["start_date"], "%Y-%m-%d").date() if current_task.get("start_date") else date.today()
@@ -322,14 +321,18 @@ with tab1:
             res = tasks if selected_cat == "전체" else [t for t in tasks if t["category"] == selected_cat]
             res = [t for t in res if t["status"] in target_statuses]
 
-            if sort_option == "시작일 순":
-                res = sorted(res, key=lambda x: x.get("start_date") or "9999-12-31")
-            elif sort_option == "마감예정일 순":
-                res = sorted(res, key=lambda x: x.get("due_date") or "9999-12-31")
-            elif sort_option == "종료일 순":
-                res = sorted(res, key=lambda x: x.get("end_date") or "9999-12-31")
+            # 완료 탭인 경우 전체 종료일 기준 내림차순(최신순) 고정 정렬 적용
+            if target_statuses == ["완료"]:
+                res = sorted(res, key=lambda x: x.get("end_date") or "", reverse=True)
             else:
-                res = sorted(res, key=lambda x: x["id"])
+                if sort_option == "시작일 순":
+                    res = sorted(res, key=lambda x: x.get("start_date") or "9999-12-31")
+                elif sort_option == "마감예정일 순":
+                    res = sorted(res, key=lambda x: x.get("due_date") or "9999-12-31")
+                elif sort_option == "종료일 순":
+                    res = sorted(res, key=lambda x: x.get("end_date") or "9999-12-31")
+                else:
+                    res = sorted(res, key=lambda x: x["id"])
 
             if not res:
                 st.info("해당 조건의 업무가 없습니다.")
@@ -559,7 +562,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_탭정렬반영_{today_str}.xlsx",
+                file_name=f"업무진행상황_완료정렬반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
