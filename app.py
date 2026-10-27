@@ -7,7 +7,7 @@ from io import BytesIO
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
-    page_title="HYO'S 업무 진행 관리",
+    page_title="개인 업무 진행 상황 관리",
     page_icon="✅",
     layout="wide"
 )
@@ -107,7 +107,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 앱 UI 레이아웃 시작 ---
-st.title("✅ HYO'S 업무 진행 관리 앱")
+st.title("✅ 개인 업무 진행 상황 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
@@ -184,7 +184,6 @@ with tab1:
             st.markdown("---")
             st.subheader("📝 세부 업무별 체크리스트, 일정 및 추진계획 메모 관리")
 
-            # 데이터 무결성 보정 (기존 데이터에 세부 날짜가 없는 경우 처리)
             subtasks = []
             default_sub_start = current_task.get("start_date") or str(date.today())
             default_sub_end = current_task.get("due_date") or str(date.today())
@@ -202,7 +201,6 @@ with tab1:
             if not subtasks:
                 st.info("등록된 세부 업무가 없습니다. 아래에서 추가해보세요.")
             
-            # 세부 업무 리스트 순회 및 조작
             for idx, sub in enumerate(subtasks):
                 chk_key = f"edit_chk_{task_id}_{idx}"
                 memo_key = f"edit_memo_{task_id}_{idx}"
@@ -216,7 +214,6 @@ with tab1:
 
                 st.markdown(f"**[{idx+1}] 세부 항목 컨트롤**")
                 
-                # 체크박스와 순서 변경/삭제 버튼 배치
                 rc1, rc2, rc3, rc4 = st.columns([5, 1, 1, 1])
                 with rc1:
                     new_done = st.checkbox(sub["name"], key=chk_key)
@@ -244,7 +241,6 @@ with tab1:
                         _clear_widget_keys(task_id)
                         st.rerun()
 
-                # 세부 업무별 시작일 / 종료일 지정 컬럼
                 sc1, sc2 = st.columns(2)
                 with sc1:
                     cur_s_date = datetime.strptime(sub["start_date"], "%Y-%m-%d").date() if sub.get("start_date") else date.today()
@@ -258,7 +254,6 @@ with tab1:
                     subtasks[idx]["end_date"] = str(new_sub_end)
                     update_task_db(task_id, subtasks, current_task["status"])
 
-                # 추진계획 메모 입력 필드
                 new_memo = st.text_area("추진계획 메모", value=sub["memo"], key=memo_key, placeholder="이 세부 업무와 관련된 추진계획이나 메모를 여러 줄로 자유롭게 입력하세요")
                 if new_memo != sub["memo"]:
                     subtasks[idx]["memo"] = new_memo
@@ -266,7 +261,6 @@ with tab1:
 
                 st.markdown("---")
             
-            # 새 세부 업무 추가 폼
             with st.form(key=f"edit_add_form_{task_id}", clear_on_submit=True):
                 new_sub_name = st.text_input("새 세부 업무 추가", placeholder="세부 업무명 입력")
                 
@@ -305,72 +299,109 @@ with tab1:
     if not tasks:
         st.info("등록된 업무가 없습니다. 왼쪽 사이드바에서 새 업무를 추가해보세요!")
     else:
-        # 카테고리 필터 박스
-        categories = ["전체"] + list(set(t["category"] for t in tasks))
-        selected_cat = st.selectbox("📂 구분별 필터", categories)
-        
-        filtered_tasks = tasks if selected_cat == "전체" else [t for t in tasks if t["category"] == selected_cat]
+        # 상단 필터 및 정렬 컨트롤 영역
+        f_col1, f_col2 = st.columns(2)
+        with f_col1:
+            categories = ["전체"] + list(set(t["category"] for t in tasks))
+            selected_cat = st.selectbox("📂 구분별 필터", categories, key="main_cat_filter")
+        with f_col2:
+            sort_option = st.selectbox(
+                "🔄 정렬 기준",
+                ["ID 순 (기본)", "시작일 순", "마감예정일 순", "종료일 순"],
+                key="main_sort_option"
+            )
 
-        for task in filtered_tasks:
-            subtasks = task["subtasks"]
-            task_id = task["id"]
-            
-            total_sub = len(subtasks)
-            done_sub = sum(1 for s in subtasks if isinstance(s, dict) and s.get("done"))
-            
-            # 진행률 계산
-            progress = (done_sub / total_sub) if total_sub > 0 else (1.0 if task["status"] == "완료" else 0.0)
-            progress_percent = int(progress * 100)
+        st.markdown("---")
 
-            # 상태 자동 변경 로직
-            if total_sub > 0:
-                if progress_percent == 100:
-                    new_status = "완료"
-                    if not task.get("end_date"):
-                        update_task_db(task_id, subtasks, new_status, end_date=str(date.today()))
-                        task["end_date"] = str(date.today())
-                elif progress_percent > 0:
-                    new_status = "진행중"
-                else:
-                    new_status = "대기"
-            else:
-                new_status = task["status"]
+        # 상태별 탭 분리 (진행중/대기, 완료, 전체)
+        status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
-            if new_status != task["status"]:
-                task["status"] = new_status
-                update_task_db(task_id, subtasks, new_status)
+        def render_task_cards(target_statuses):
+            # 카테고리 필터링
+            res = tasks if selected_cat == "전체" else [t for t in tasks if t["category"] == selected_cat]
+            # 상태 필터링
+            res = [t for t in res if t["status"] in target_statuses]
 
-            start_str = task.get("start_date") or "미지정"
-            due_str = task.get("due_date") or "미지정"
-            end_str = task.get("end_date") or "-"
+            # 정렬 적용
+            if sort_option == "시작일 순":
+                res = sorted(res, key=lambda x: x.get("start_date") or "9999-12-31")
+            elif sort_option == "마감예정일 순":
+                res = sorted(res, key=lambda x: x.get("due_date") or "9999-12-31")
+            elif sort_option == "종료일 순":
+                res = sorted(res, key=lambda x: x.get("end_date") or "9999-12-31")
+            else: # ID 순 (기본)
+                res = sorted(res, key=lambda x: x["id"])
 
-            # 메인 화면 카드 UI
-            with st.container():
-                st.markdown(f"""
-                <div style="padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0; margin-bottom: 5px; background-color: #ffffff;">
-                    <span style="background-color: #f0f2f6; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">{task['category']}</span>
-                    <span style="font-size: 16px; font-weight: bold; margin-left: 10px;">{task['title']}</span>
-                    <span style="color: #666; font-size: 14px; margin-left: 10px;">({task['status']} - {progress_percent}%)</span>
-                    <div style="margin-top: 8px; font-size: 13px; color: #555;">
-                        📅 <b>전체 시작일:</b> {start_str} &nbsp;|&nbsp; ⏳ <b>전체 마감예정일:</b> {due_str} &nbsp;|&nbsp; ✅ <b>전체 종료일:</b> {end_str}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+            if not res:
+                st.info("해당 조건의 업무가 없습니다.")
+                return
+
+            for task in res:
+                subtasks = task["subtasks"]
+                task_id = task["id"]
                 
-                col_bar, col_btn1, col_btn2 = st.columns([4, 1, 1])
-                with col_bar:
-                    st.progress(progress)
-                with col_btn1:
-                    if st.button("⚙️ 세부업무 & 일정 편집", key=f"edit_btn_{task_id}", use_container_width=True):
-                        st.session_state.editing_task_id = task_id
-                        st.rerun()
-                with col_btn2:
-                    if st.button("🗑️ 전체 삭제", key=f"del_btn_{task_id}", use_container_width=True):
-                        with st.spinner("삭제 중..."):
-                            delete_task_db(task_id)
-                        st.success("삭제되었습니다!")
-                        st.rerun()
-                st.markdown("---")
+                total_sub = len(subtasks)
+                done_sub = sum(1 for s in subtasks if isinstance(s, dict) and s.get("done"))
+                
+                progress = (done_sub / total_sub) if total_sub > 0 else (1.0 if task["status"] == "완료" else 0.0)
+                progress_percent = int(progress * 100)
+
+                if total_sub > 0:
+                    if progress_percent == 100:
+                        new_status = "완료"
+                        if not task.get("end_date"):
+                            update_task_db(task_id, subtasks, new_status, end_date=str(date.today()))
+                            task["end_date"] = str(date.today())
+                    elif progress_percent > 0:
+                        new_status = "진행중"
+                    else:
+                        new_status = "대기"
+                else:
+                    new_status = task["status"]
+
+                if new_status != task["status"]:
+                    task["status"] = new_status
+                    update_task_db(task_id, subtasks, new_status)
+
+                start_str = task.get("start_date") or "미지정"
+                due_str = task.get("due_date") or "미지정"
+                end_str = task.get("end_date") or "-"
+
+                with st.container():
+                    st.markdown(f"""
+                    <div style="padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0; margin-bottom: 5px; background-color: #ffffff;">
+                        <span style="background-color: #f0f2f6; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">{task['category']}</span>
+                        <span style="font-size: 16px; font-weight: bold; margin-left: 10px;">{task['title']}</span>
+                        <span style="color: #666; font-size: 14px; margin-left: 10px;">({task['status']} - {progress_percent}%)</span>
+                        <div style="margin-top: 8px; font-size: 13px; color: #555;">
+                            📅 <b>전체 시작일:</b> {start_str} &nbsp;|&nbsp; ⏳ <b>전체 마감예정일:</b> {due_str} &nbsp;|&nbsp; ✅ <b>전체 종료일:</b> {end_str}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col_bar, col_btn1, col_btn2 = st.columns([4, 1, 1])
+                    with col_bar:
+                        st.progress(progress)
+                    with col_btn1:
+                        if st.button("⚙️ 세부업무 & 일정 편집", key=f"edit_btn_{task_id}", use_container_width=True):
+                            st.session_state.editing_task_id = task_id
+                            st.rerun()
+                    with col_btn2:
+                        if st.button("🗑️ 전체 삭제", key=f"del_btn_{task_id}", use_container_width=True):
+                            with st.spinner("삭제 중..."):
+                                delete_task_db(task_id)
+                            st.success("삭제되었습니다!")
+                            st.rerun()
+                    st.markdown("---")
+
+        with status_tab1:
+            render_task_cards(["대기", "진행중"])
+            
+        with status_tab2:
+            render_task_cards(["완료"])
+            
+        with status_tab3:
+            render_task_cards(["대기", "진행중", "완료"])
 
 with tab2:
     st.subheader("📌 전체 업무 통계 대시보드")
@@ -406,7 +437,6 @@ with tab2:
         st.subheader("📥 전체 업무 리스트 엑셀 다운로드")
         st.caption("다운로드할 업무 상태를 체크박스로 선택하고, 세부 업무별 일정 및 셀 병합이 적용된 엑셀 파일을 다운로드하세요.")
 
-        # 상태 선택 체크박스 레이아웃 (가로 배치)
         st.write("**다운로드할 업무 상태 선택**")
         chk_col1, chk_col2, chk_col3 = st.columns(3)
         with chk_col1:
@@ -433,7 +463,6 @@ with tab2:
                 done_sub = sum(1 for s in subtasks if isinstance(s, dict) and s.get("done"))
                 progress_percent = int((done_sub / total_sub) * 100) if total_sub > 0 else (100 if t["status"] == "완료" else 0)
                 
-                # 세부 업무 항목별로 각각 별도의 행(Row) 생성 및 세부 일정 포함
                 if subtasks:
                     for s in subtasks:
                         if isinstance(s, dict):
@@ -483,7 +512,6 @@ with tab2:
 
             df = pd.DataFrame(excel_data)
 
-            # Excel 파일 생성 및 스타일링 (셀 병합, 줄바꿈, 정렬)
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name="업무진행상황")
@@ -492,12 +520,10 @@ with tab2:
             wb = openpyxl.load_workbook(output)
             ws = wb.active
             
-            # 셀 스타일 설정 (모든 셀 줄바꿈 및 정렬)
             for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
                 for cell in row:
                     cell.alignment = openpyxl.styles.Alignment(wrap_text=True, vertical="center", horizontal="center" if cell.column in [1, 4, 5, 6, 7, 8, 10, 11, 12] else "left")
 
-            # ID 기준(1열)으로 동일한 상위 업무 행들을 찾아 셀 병합 실행 (열 1~8 병합)
             merge_cols = [1, 2, 3, 4, 5, 6, 7, 8]
             start_row = 2
             max_row = ws.max_row
@@ -515,7 +541,6 @@ with tab2:
                 
                 start_row = end_row + 1
 
-            # 테두리 설정
             thin_border = openpyxl.styles.Border(
                 left=openpyxl.styles.Side(style='thin', color='CCCCCC'),
                 right=openpyxl.styles.Side(style='thin', color='CCCCCC'),
@@ -535,7 +560,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_세부일정포함_{today_str}.xlsx",
+                file_name=f"업무진행상황_정렬반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
