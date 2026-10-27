@@ -88,9 +88,13 @@ def _update_and_save(task_id, subtasks):
 
 def _clear_widget_keys(task_id):
     """위젯 충돌 방지를 위해 해당 업무의 세션 상태 키 모두 초기화"""
-    keys_to_del = [k for k in st.session_state.keys() if k.startswith(f"edit_chk_{task_id}_") or k.startswith(f"edit_memo_{task_id}_") or k.startswith(f"edit_sub_start_{task_id}_") or k.startswith(f"edit_sub_end_{task_id}_")]
+    keys_to_del = [k for k in st.session_state.keys() if f"_{task_id}_" in k]
     for k in keys_to_del:
-        del st.session_state[k]
+        if k != "editing_task_id":
+            try:
+                del st.session_state[k]
+            except:
+                pass
 
 # 세션 상태에 편집 중인 업무 ID 관리 초기화
 if "editing_task_id" not in st.session_state:
@@ -299,7 +303,6 @@ with tab1:
     if not tasks:
         st.info("등록된 업무가 없습니다. 왼쪽 사이드바에서 새 업무를 추가해보세요!")
     else:
-        # 상단 필터 및 정렬 컨트롤 영역
         f_col1, f_col2 = st.columns(2)
         with f_col1:
             categories = ["전체"] + list(set(t["category"] for t in tasks))
@@ -313,23 +316,19 @@ with tab1:
 
         st.markdown("---")
 
-        # 상태별 탭 분리 (진행중/대기, 완료, 전체)
         status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
-        def render_task_cards(target_statuses):
-            # 카테고리 필터링
+        def render_task_cards(target_statuses, tab_prefix):
             res = tasks if selected_cat == "전체" else [t for t in tasks if t["category"] == selected_cat]
-            # 상태 필터링
             res = [t for t in res if t["status"] in target_statuses]
 
-            # 정렬 적용
             if sort_option == "시작일 순":
                 res = sorted(res, key=lambda x: x.get("start_date") or "9999-12-31")
             elif sort_option == "마감예정일 순":
                 res = sorted(res, key=lambda x: x.get("due_date") or "9999-12-31")
             elif sort_option == "종료일 순":
                 res = sorted(res, key=lambda x: x.get("end_date") or "9999-12-31")
-            else: # ID 순 (기본)
+            else:
                 res = sorted(res, key=lambda x: x["id"])
 
             if not res:
@@ -383,11 +382,11 @@ with tab1:
                     with col_bar:
                         st.progress(progress)
                     with col_btn1:
-                        if st.button("⚙️ 세부업무 & 일정 편집", key=f"edit_btn_{task_id}", use_container_width=True):
+                        if st.button("⚙️ 세부업무 & 일정 편집", key=f"edit_btn_{tab_prefix}_{task_id}", use_container_width=True):
                             st.session_state.editing_task_id = task_id
                             st.rerun()
                     with col_btn2:
-                        if st.button("🗑️ 전체 삭제", key=f"del_btn_{task_id}", use_container_width=True):
+                        if st.button("🗑️ 전체 삭제", key=f"del_btn_{tab_prefix}_{task_id}", use_container_width=True):
                             with st.spinner("삭제 중..."):
                                 delete_task_db(task_id)
                             st.success("삭제되었습니다!")
@@ -395,13 +394,13 @@ with tab1:
                     st.markdown("---")
 
         with status_tab1:
-            render_task_cards(["대기", "진행중"])
+            render_task_cards(["대기", "진행중"], "ongoing")
             
         with status_tab2:
-            render_task_cards(["완료"])
+            render_task_cards(["완료"], "completed")
             
         with status_tab3:
-            render_task_cards(["대기", "진행중", "완료"])
+            render_task_cards(["대기", "진행중", "완료"], "all")
 
 with tab2:
     st.subheader("📌 전체 업무 통계 대시보드")
@@ -560,7 +559,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_정렬반영_{today_str}.xlsx",
+                file_name=f"업무진행상황_탭정렬반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
