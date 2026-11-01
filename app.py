@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime, date, timedelta
+import calendar
 import openpyxl
 from io import BytesIO
 
@@ -119,7 +120,7 @@ st.markdown("---")
 
 CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
 
-# 4. 사이드바: 새 업무 등록 및 맨 아래 캘린더 버튼
+# 4. 사이드바: 새 업무 등록 및 캘린더 버튼
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
@@ -151,7 +152,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("📅 캘린더 일정 관리")
-    if st.button("🗓️ 캘린더 뷰 열기 / 토글", use_container_width=True, type="primary"):
+    if st.button("🗓️ 월간 캘린더 뷰 열기 / 토글", use_container_width=True, type="primary"):
         st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
         st.rerun()
 
@@ -159,45 +160,81 @@ with st.sidebar:
 with st.spinner("데이터를 불러오는 중입니다..."):
     tasks = load_data()
 
-# 5. 캘린더 모달 / 뷰 영역 (사이드바 버튼 클릭 시 상단에 표시)
+# 5. 월간 캘린더 격자 뷰 영역 (사이드바 버튼 클릭 시 표시)
 if st.session_state.show_calendar_modal:
     st.markdown("""
     <div style="padding: 20px; border-radius: 10px; border: 2px solid #2196F3; background-color: #e3f2fd; margin-bottom: 20px;">
-        <h3 style="margin-top: 0; color: #0d47a1;">🗓️ 구글 캘린더 스타일 업무 일정 뷰어</h3>
-        <p style="color: #333; font-size: 14px;">특정 날짜를 선택하면 해당 기간(시작일 ~ 마감예정일/종료일)에 포함된 업무들을 모아서 확인하고 수정·삭제할 수 있습니다.</p>
+        <h3 style="margin-top: 0; color: #0d47a1;">🗓️ 구글 캘린더 스타일 월간 격자 뷰어</h3>
+        <p style="color: #333; font-size: 14px;">연도와 월을 선택하여 달력 형태의 격자에서 날짜별로 진행 중인 업무 일정을 한눈에 파악하세요.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    cal_col1, cal_col2 = st.columns([1, 2])
-    with cal_col1:
-        selected_cal_date = st.date_input("조회할 날짜 선택", value=date.today(), key="calendar_date_picker")
-    
-    with cal_col2:
-        st.markdown(f"#### 📌 **{selected_cal_date.strftime('%Y년 %m월 %d일')}** 일정 현황")
-    
-    # 선택한 날짜가 업무의 [시작일, 마감예정일] 범위 내에 포함되는 업무 필터링
-    matched_tasks = []
-    for t in tasks:
-        s_date_str = t.get("start_date")
-        d_date_str = t.get("due_date")
-        if s_date_str and d_date_str:
-            try:
-                s_dt = datetime.strptime(s_date_str, "%Y-%m-%d").date()
-                d_dt = datetime.strptime(d_date_str, "%Y-%m-%d").date()
-                if s_dt <= selected_cal_date <= d_dt:
-                    matched_tasks.append(t)
-            except:
-                pass
+    c_col1, c_col2 = st.columns(2)
+    with c_col1:
+        cal_year = st.number_input("조회 연도", min_value=2020, max_value=2035, value=date.today().year, step=1)
+    with c_col2:
+        cal_month = st.selectbox("조회 월 선택", list(range(1, 13)), index=date.today().month - 1)
 
-    if matched_tasks:
-        for t in matched_tasks:
-            st.markdown(f"""
-            - **[{t['category']}] {t['title']}** (상태: `{t['status']}`)  
-              ⏳ 기간: {t.get('start_date')} ~ {t.get('due_date')}
-            """)
-    else:
-        st.info("선택한 날짜에 진행 중이거나 예정된 업무가 없습니다.")
+    st.markdown(f"### 📌 {cal_year}년 {cal_month}월 캘린더")
 
+    # 월간 캘린더 매트릭스 생성 (월요일 시작 기준)
+    cal_matrix = calendar.monthcalendar(cal_year, cal_month)
+    days_header = ["월", "화", "수", "목", "금", "토", "일"]
+
+    # 요일 헤더 렌더링
+    head_cols = st.columns(7)
+    for idx, day_name in enumerate(days_header):
+        head_cols[idx].markdown(f"<div style='text-align: center; font-weight: bold; color: {'#d32f2f' if idx==6 else ('#1976d2' if idx==5 else '#333')};'>{day_name}</div>", unsafe_allow_html=True)
+
+    color_map = {
+        "융합": "#e3f2fd", 
+        "전공": "#e8f5e9", 
+        "기초": "#fff3e0", 
+        "가치": "#fce4ec", 
+        "기타": "#f3e5f5"
+    }
+
+    # 날짜별 격자 렌더링
+    for week in cal_matrix:
+        week_cols = st.columns(7)
+        for i, day in enumerate(week):
+            with week_cols[i]:
+                if day == 0:
+                    st.markdown("<div style='min-height: 110px; background-color: #fcfcfc; border: 1px solid #eee; border-radius: 4px; padding: 6px;'></div>", unsafe_allow_html=True)
+                else:
+                    curr_date = date(cal_year, cal_month, day)
+                    # 해당 날짜에 포함되는 업무 수집
+                    day_tasks = []
+                    for t in tasks:
+                        s_str = t.get("start_date")
+                        d_str = t.get("due_date")
+                        if s_str and d_str:
+                            try:
+                                s_dt = datetime.strptime(s_str, "%Y-%m-%d").date()
+                                d_dt = datetime.strptime(d_str, "%Y-%m-%d").date()
+                                if s_dt <= curr_date <= d_dt:
+                                    day_tasks.append(t)
+                            except:
+                                pass
+
+                    badges_html = ""
+                    for dt_task in day_tasks:
+                        cat = dt_task.get("category", "기타")
+                        bg_color = color_map.get(cat, "#f0f2f6")
+                        badges_html += f"<div style='font-size: 11px; background-color: {bg_color}; padding: 2px 5px; margin-bottom: 3px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' title='{dt_task['title']}'><b>[{cat}]</b> {dt_task['title']}</div>"
+
+                    is_today = (curr_date == date.today())
+                    border_style = "border: 2px solid #4CAF50;" if is_today else "border: 1px solid #ddd;"
+                    bg_color_cell = "#f1f8e9" if is_today else "white"
+
+                    st.markdown(f"""
+                    <div style='min-height: 110px; {border_style} border-radius: 4px; padding: 6px; background-color: {bg_color_cell};'>
+                        <div style='font-weight: bold; font-size: 13px; margin-bottom: 5px; color: {"#d32f2f" if i==6 else ("#1976d2" if i==5 else "#333")};'>{day}</div>
+                        {badges_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    st.write("")
     if st.button("❌ 캘린더 뷰 닫기", use_container_width=True):
         st.session_state.show_calendar_modal = False
         st.rerun()
@@ -357,16 +394,39 @@ with tab1:
     if not tasks:
         st.info("등록된 업무가 없습니다. 왼쪽 사이드바에서 새 업무를 추가해보세요!")
     else:
-        f_col1, f_col2 = st.columns(2)
+        # --- 필터 및 정렬 컨트롤 영역 (년, 월, 주, 일 별 보기) ---
+        st.subheader("🔍 업무 필터 및 정렬 설정")
+        f_col1, f_col2, f_col3 = st.columns(3)
         with f_col1:
             filter_options = ["전체"] + CATEGORY_OPTIONS
             selected_cat = st.selectbox("📂 업무구분 필터", filter_options, key="main_cat_filter")
         with f_col2:
+            period_mode = st.selectbox("📅 기간 단위 보기", ["전체 기간", "연간 보기", "월간 보기", "주간 보기", "일간 보기"], key="main_period_mode")
+        with f_col3:
             sort_option = st.selectbox(
                 "🔄 정렬 기준",
                 ["ID 순 (기본)", "시작일 순", "마감예정일 순", "종료일 순"],
                 key="main_sort_option"
             )
+
+        target_year = date.today().year
+        target_month = date.today().month
+        target_date = date.today()
+
+        if period_mode == "연간 보기":
+            y_col1 = st.columns(1)[0]
+            with y_col1:
+                target_year = st.number_input("조회 연도 선택", min_value=2020, max_value=2035, value=date.today().year, step=1)
+        elif period_mode == "월간 보기":
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                target_year = st.number_input("조회 연도", min_value=2020, max_value=2035, value=date.today().year, step=1)
+            with m_col2:
+                target_month = st.selectbox("조회 월 선택", list(range(1, 13)), index=date.today().month - 1)
+        elif period_mode == "주간 보기" or period_mode == "일간 보기":
+            d_col1 = st.columns(1)[0]
+            with d_col1:
+                target_date = st.date_input("기준 날짜 선택 (해당 주 또는 일자 조회)", value=date.today(), key="period_기준날짜")
 
         st.markdown("---")
 
@@ -375,6 +435,40 @@ with tab1:
         def render_task_cards(target_statuses, tab_prefix):
             res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category") == selected_cat]
             res = [t for t in res if t["status"] in target_statuses]
+
+            filtered_by_period = []
+            for t in res:
+                s_str = t.get("start_date")
+                d_str = t.get("due_date")
+                if not s_str or not d_str:
+                    continue
+                try:
+                    s_dt = datetime.strptime(s_str, "%Y-%m-%d").date()
+                    d_dt = datetime.strptime(d_str, "%Y-%m-%d").date()
+
+                    if period_mode == "전체 기간":
+                        filtered_by_period.append(t)
+                    elif period_mode == "연간 보기":
+                        if s_dt.year <= target_year <= d_dt.year:
+                            filtered_by_period.append(t)
+                    elif period_mode == "월간 보기":
+                        last_day = calendar.monthrange(target_year, target_month)[1]
+                        m_start = date(target_year, target_month, 1)
+                        m_end = date(target_year, target_month, last_day)
+                        if not (d_dt < m_start or s_dt > m_end):
+                            filtered_by_period.append(t)
+                    elif period_mode == "주간 보기":
+                        start_of_week = target_date - timedelta(days=target_date.weekday())
+                        end_of_week = start_of_week + timedelta(days=6)
+                        if not (d_dt < start_of_week or s_dt > end_of_week):
+                            filtered_by_period.append(t)
+                    elif period_mode == "일간 보기":
+                        if s_dt <= target_date <= d_dt:
+                            filtered_by_period.append(t)
+                except:
+                    pass
+
+            res = filtered_by_period
 
             if target_statuses == ["완료"]:
                 res = sorted(res, key=lambda x: x.get("end_date") or "", reverse=True)
@@ -389,7 +483,7 @@ with tab1:
                     res = sorted(res, key=lambda x: x["id"])
 
             if not res:
-                st.info("해당 조건의 업무가 없습니다.")
+                st.info("해당 조건 및 기간에 등록된 업무가 없습니다.")
                 return
 
             for task in res:
@@ -616,7 +710,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_캘린더반영_{today_str}.xlsx",
+                file_name=f"업무진행상황_달력형반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
