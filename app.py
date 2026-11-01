@@ -1,13 +1,13 @@
 import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import openpyxl
 from io import BytesIO
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
-    page_title="횻 업무 진행 상황 관리",
+    page_title="개인 업무 진행 상황 관리",
     page_icon="✅",
     layout="wide"
 )
@@ -32,7 +32,7 @@ def load_data():
         return []
 
 def add_task_db(category, title, subtasks, start_date, due_date):
-    """새로운 업무, 세부 체크리스트 및 일정 추가 (세부 업무별 날짜 기본값 포함)"""
+    """새로운 업무, 세부 체크리스트 및 일정 추가"""
     new_row = {
         "category": category,
         "title": title,
@@ -64,7 +64,7 @@ def delete_task_db(task_id):
     supabase.table("tasks").delete().eq("id", task_id).execute()
 
 def _update_and_save(task_id, subtasks):
-    """진행률 및 상태 자동 계산 후 DB 저장 헬퍼 함수 (완료 시 종료일 자동 기록)"""
+    """진행률 및 상태 자동 계산 후 DB 저장 헬퍼 함수"""
     total = len(subtasks)
     done = sum(1 for s in subtasks if s["done"])
     prog = (done / total) if total > 0 else 0
@@ -90,17 +90,19 @@ def _clear_widget_keys(task_id):
     """위젯 충돌 방지를 위해 해당 업무의 세션 상태 키 모두 초기화"""
     keys_to_del = [k for k in st.session_state.keys() if f"_{task_id}_" in k]
     for k in keys_to_del:
-        if k != "editing_task_id":
+        if k != "editing_task_id" and k != "show_calendar_modal":
             try:
                 del st.session_state[k]
             except:
                 pass
 
-# 세션 상태에 편집 중인 업무 ID 관리 초기화
 if "editing_task_id" not in st.session_state:
     st.session_state.editing_task_id = None
 
-# --- 커스텀 CSS (메모 박스 크기 조절 허용 및 기본 높이 확장) ---
+if "show_calendar_modal" not in st.session_state:
+    st.session_state.show_calendar_modal = False
+
+# --- 커스텀 CSS ---
 st.markdown("""
 <style>
     textarea {
@@ -111,14 +113,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 앱 UI 레이아웃 시작 ---
-st.title("✅ 횻 업무 진행 관리 앱")
+st.title("✅ 개인 업무 진행 상황 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
-# 고정 업무 구분 리스트 정의
 CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
 
-# 4. 사이드바: 새 업무 등록 폼
+# 4. 사이드바: 새 업무 등록 및 맨 아래 캘린더 버튼
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
@@ -148,11 +149,62 @@ with st.sidebar:
             else:
                 st.warning("업무 제목을 입력해주세요.")
 
+    st.markdown("---")
+    st.subheader("📅 캘린더 일정 관리")
+    if st.button("🗓️ 캘린더 뷰 열기 / 토글", use_container_width=True, type="primary"):
+        st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
+        st.rerun()
+
 # 데이터 불러오기
 with st.spinner("데이터를 불러오는 중입니다..."):
     tasks = load_data()
 
-# 5. 메인 화면: 탭 구성
+# 5. 캘린더 모달 / 뷰 영역 (사이드바 버튼 클릭 시 상단에 표시)
+if st.session_state.show_calendar_modal:
+    st.markdown("""
+    <div style="padding: 20px; border-radius: 10px; border: 2px solid #2196F3; background-color: #e3f2fd; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #0d47a1;">🗓️ 구글 캘린더 스타일 업무 일정 뷰어</h3>
+        <p style="color: #333; font-size: 14px;">특정 날짜를 선택하면 해당 기간(시작일 ~ 마감예정일/종료일)에 포함된 업무들을 모아서 확인하고 수정·삭제할 수 있습니다.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    cal_col1, cal_col2 = st.columns([1, 2])
+    with cal_col1:
+        selected_cal_date = st.date_input("조회할 날짜 선택", value=date.today(), key="calendar_date_picker")
+    
+    with cal_col2:
+        st.markdown(f"#### 📌 **{selected_cal_date.strftime('%Y년 %m월 %d일')}** 일정 현황")
+    
+    # 선택한 날짜가 업무의 [시작일, 마감예정일] 범위 내에 포함되는 업무 필터링
+    matched_tasks = []
+    for t in tasks:
+        s_date_str = t.get("start_date")
+        d_date_str = t.get("due_date")
+        if s_date_str and d_date_str:
+            try:
+                s_dt = datetime.strptime(s_date_str, "%Y-%m-%d").date()
+                d_dt = datetime.strptime(d_date_str, "%Y-%m-%d").date()
+                if s_dt <= selected_cal_date <= d_dt:
+                    matched_tasks.append(t)
+            except:
+                pass
+
+    if matched_tasks:
+        for t in matched_tasks:
+            st.markdown(f"""
+            - **[{t['category']}] {t['title']}** (상태: `{t['status']}`)  
+              ⏳ 기간: {t.get('start_date')} ~ {t.get('due_date')}
+            """)
+    else:
+        st.info("선택한 날짜에 진행 중이거나 예정된 업무가 없습니다.")
+
+    if st.button("❌ 캘린더 뷰 닫기", use_container_width=True):
+        st.session_state.show_calendar_modal = False
+        st.rerun()
+
+    st.markdown("---")
+
+# 6. 메인 화면: 탭 구성
 tab1, tab2 = st.tabs(["📋 업무 진행 & 관리", "📊 한눈에 보기 & 엑셀 다운로드"])
 
 with tab1:
@@ -307,7 +359,6 @@ with tab1:
     else:
         f_col1, f_col2 = st.columns(2)
         with f_col1:
-            # 요청하신 업무구분 리스트와 '전체' 포함
             filter_options = ["전체"] + CATEGORY_OPTIONS
             selected_cat = st.selectbox("📂 업무구분 필터", filter_options, key="main_cat_filter")
         with f_col2:
@@ -565,7 +616,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_구분선택반영_{today_str}.xlsx",
+                file_name=f"업무진행상황_캘린더반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
