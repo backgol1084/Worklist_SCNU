@@ -91,7 +91,7 @@ st.markdown("""
 
 CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
 
-# 4. Streamlit 네이티브 모달 팝업 함수 정의 (버튼 클릭 시 화면 중앙에 별도 창으로 뜸)
+# 4. 날짜 클릭 시 뜨는 모달 팝업 함수 정의
 @st.dialog("📅 날짜별 업무 관리 팝업", width="large")
 def date_task_modal(sel_date_str):
     sel_d = datetime.strptime(sel_date_str, "%Y-%m-%d").date()
@@ -206,7 +206,6 @@ if st.session_state.show_calendar_modal:
     </div>
     """, unsafe_allow_html=True)
 
-    # 기본값을 월간 캘린더(인덱스 1)로 설정
     cal_view_mode = st.radio("캘린더 보기 단위 선택", ["연간 캘린더", "월간 캘린더", "주간 캘린더", "일간 캘린더"], index=1, horizontal=True)
 
     color_map = {
@@ -225,7 +224,8 @@ if st.session_state.show_calendar_modal:
         for m in range(1, 13):
             with y_cols[(m - 1) % 3]:
                 st.markdown(f"**--- {m}월 ---**")
-                m_matrix = calendar.monthcalendar(yr, m)
+                cal_obj = calendar.Calendar(firstweekday=6) # 일요일 시작
+                m_matrix = cal_obj.monthdayscalendar(yr, m)
                 m_tasks_count = 0
                 for week in m_matrix:
                     for day in week:
@@ -253,12 +253,15 @@ if st.session_state.show_calendar_modal:
 
         st.markdown(f"### 📌 {cal_year}년 {cal_month}월 캘린더 (날짜를 클릭하면 팝업 창이 뜹니다)")
 
-        cal_matrix = calendar.monthcalendar(cal_year, cal_month)
-        days_header = ["월", "화", "수", "목", "금", "토", "일"]
+        cal_obj = calendar.Calendar(firstweekday=6) # 일요일 시작
+        cal_matrix = cal_obj.monthdayscalendar(cal_year, cal_month)
+        days_header = ["일", "월", "화", "수", "목", "금", "토"]
 
         head_cols = st.columns(7)
         for idx, day_name in enumerate(days_header):
-            head_cols[idx].markdown(f"<div style='text-align: center; font-weight: bold; color: {'#d32f2f' if idx==6 else ('#1976d2' if idx==5 else '#333')};'>{day_name}</div>", unsafe_allow_html=True)
+            # 일요일(0)은 빨간색, 토요일(6)은 파란색
+            header_color = '#d32f2f' if idx == 0 else ('#1976d2' if idx == 6 else '#333')
+            head_cols[idx].markdown(f"<div style='text-align: center; font-weight: bold; color: {header_color};'>{day_name}</div>", unsafe_allow_html=True)
 
         for week in cal_matrix:
             week_cols = st.columns(7)
@@ -287,10 +290,11 @@ if st.session_state.show_calendar_modal:
 
                         is_today = (curr_date == date.today())
                         border_style = "border: 2px solid #4CAF50;" if is_today else "border: 1px solid #ddd;"
+                        day_color = '#d32f2f' if i == 0 else ('#1976d2' if i == 6 else '#333')
                         
                         st.markdown(f"""
                         <div style='min-height: 120px; {border_style} border-radius: 4px; padding: 4px; background-color: {"#f1f8e9" if is_today else "white"};'>
-                            <div style='font-weight: bold; font-size: 13px; margin-bottom: 2px; color: {"#d32f2f" if i==6 else ("#1976d2" if i==5 else "#333")};'>{day}</div>
+                            <div style='font-weight: bold; font-size: 13px; margin-bottom: 2px; color: {day_color};'>{day}</div>
                             {badges_html}
                         </div>
                         """, unsafe_allow_html=True)
@@ -300,15 +304,18 @@ if st.session_state.show_calendar_modal:
 
     elif cal_view_mode == "주간 캘린더":
         base_w_date = st.date_input("기준 날짜 선택 (해당 주 조회)", value=date.today(), key="weekly_date_picker")
-        start_w = base_w_date - timedelta(days=base_w_date.weekday())
+        # 일요일 시작 기준으로 주의 시작일 계산
+        start_w = base_w_date - timedelta(days=(base_w_date.weekday() + 1) % 7)
         end_w = start_w + timedelta(days=6)
         st.markdown(f"### 📌 주간 일정 ({start_w.strftime('%Y-%m-%d')} ~ {end_w.strftime('%Y-%m-%d')})")
 
         w_cols = st.columns(7)
+        day_labels = ['일', '월', '화', '수', '목', '금', '토']
         for i in range(7):
             d_item = start_w + timedelta(days=i)
             with w_cols[i]:
-                st.markdown(f"**{d_item.strftime('%m/%d')} ({['월','화','수','목','금','토','일'][i]})**")
+                d_color = '#d32f2f' if i == 0 else ('#1976d2' if i == 6 else '#333')
+                st.markdown(f"<div style='color: {d_color}; font-weight: bold;'>{d_item.strftime('%m/%d')} ({day_labels[i]})</div>", unsafe_allow_html=True)
                 d_tasks = []
                 for t in tasks:
                     s_str = t.get("start_date")
@@ -552,7 +559,7 @@ with tab1:
                         if not (d_dt < m_start or s_dt > m_end):
                             filtered_by_period.append(t)
                     elif period_mode == "주간 보기":
-                        start_of_week = target_date - timedelta(days=target_date.weekday())
+                        start_of_week = target_date - timedelta(days=(target_date.weekday() + 1) % 7)
                         end_of_week = start_of_week + timedelta(days=6)
                         if not (d_dt < start_of_week or s_dt > end_of_week):
                             filtered_by_period.append(t)
@@ -804,7 +811,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_모달팝업반영_{today_str}.xlsx",
+                file_name=f"업무진행상황_일요일시작_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
