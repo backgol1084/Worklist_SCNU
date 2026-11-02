@@ -8,7 +8,7 @@ from io import BytesIO
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
-    page_title="개인 업무 진행 상황 관리",
+    page_title="HYO'S 업무 진행 상황 관리",
     page_icon="✅",
     layout="wide"
 )
@@ -153,7 +153,7 @@ def date_task_modal(sel_date_str):
                 st.warning("업무 제목을 입력해주세요.")
 
 # --- 앱 UI 레이아웃 시작 ---
-st.title("✅ 개인 업무 진행 상황 관리 앱")
+st.title("✅ HYO'S 업무 진행 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
