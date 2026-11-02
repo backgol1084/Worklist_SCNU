@@ -98,20 +98,27 @@ if "editing_task_id" not in st.session_state:
 if "show_calendar_modal" not in st.session_state:
     st.session_state.show_calendar_modal = False
 
-# --- 커스텀 CSS (사이드바 텍스트박스 반응형 자동 채우기 스타일 적용) ---
+# --- 커스텀 CSS (텍스트박스 크기 조절 및 초기 높이 조정) ---
 st.markdown("""
 <style>
-    /* 기본 텍스트area 높이 조절 */
+    /* 기본 텍스트area 크기 조절 활성화 */
     textarea {
         resize: vertical !important;
-        min-height: 100px !important;
     }
     
-    /* 사이드바 내부 텍스트박스들을 화면 비율에 맞게 꽉 차도록 설정 */
-    [data-testid="stSidebar"] textarea {
-        min-height: 180px !important;
+    /* 1. 사이드바 '새 업무 등록'의 세부 업무 리스트 텍스트박스 (초기 크기 50% 수준으로 축소 및 조절 가능) */
+    [data-testid="stSidebar"] [data-baseweb="textarea"] textarea {
+        min-height: 50px !important;
+        height: 80px !important;
+        resize: vertical !important;
+    }
+    
+    /* 2. 사이드바 '해야 할 일 메모장' 텍스트박스 (화면 비율 맞춤 및 조절 가능) */
+    [data-testid="stSidebar"] div:has(> label > div > p:contains("해야 할 일 메모장")) textarea,
+    [data-testid="stSidebar"] textarea[aria-label*="자유롭게 메모하세요"] {
+        min-height: 150px !important;
         height: 25vh !important;
-        width: 100% !important;
+        resize: vertical !important;
     }
 </style>
 """, unsafe_allow_html=True)
