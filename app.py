@@ -33,21 +33,22 @@ def load_data():
         return []
 
 def load_memo_db():
-    """DB에서 메모 불러오기 (없으면 생성)"""
+    """DB에서 메모 및 높이 설정 불러오기 (없으면 기본값 생성)"""
     try:
         response = supabase.table("memos").select("*").eq("id", 1).execute()
         if response.data:
-            return response.data[0].get("content", "")
+            row = response.data[0]
+            return row.get("content", ""), row.get("height", 250)
         else:
-            supabase.table("memos").insert({"id": 1, "content": ""}).execute()
-            return ""
+            supabase.table("memos").insert({"id": 1, "content": "", "height": 250}).execute()
+            return "", 250
     except Exception as e:
-        return ""
+        return "", 250
 
-def save_memo_db(content):
-    """DB에 메모 저장하기"""
+def save_memo_db(content, height):
+    """DB에 메모 내용 및 높이 저장하기"""
     try:
-        supabase.table("memos").upsert({"id": 1, "content": content}).execute()
+        supabase.table("memos").upsert({"id": 1, "content": content, "height": height}).execute()
     except Exception as e:
         st.error(f"메모 저장 중 오류가 발생했습니다: {e}")
 
@@ -98,28 +99,30 @@ if "editing_task_id" not in st.session_state:
 if "show_calendar_modal" not in st.session_state:
     st.session_state.show_calendar_modal = False
 
-# --- 커스텀 CSS (텍스트박스 크기 조절 및 초기 높이 조정) ---
-st.markdown("""
+# 데이터베이스에서 저장된 메모 내용과 높이 불러오기
+db_memo_content, db_memo_height = load_memo_db()
+
+# --- 커스텀 CSS (사용자가 지정한 높이를 동적으로 반영) ---
+st.markdown(f"""
 <style>
     /* 기본 텍스트area 크기 조절 활성화 */
-    textarea {
+    textarea {{
         resize: vertical !important;
-    }
+    }}
     
-    /* 1. 사이드바 '새 업무 등록'의 세부 업무 리스트 텍스트박스 (초기 크기 50% 수준으로 축소 및 조절 가능) */
-    [data-testid="stSidebar"] [data-baseweb="textarea"] textarea {
+    /* 사이드바 '새 업무 등록'의 세부 업무 리스트 텍스트박스 */
+    [data-testid="stSidebar"] [data-baseweb="textarea"] textarea {{
         min-height: 50px !important;
         height: 80px !important;
         resize: vertical !important;
-    }
+    }}
     
-    /* 2. 사이드바 '해야 할 일 메모장' 텍스트박스 (화면 비율 맞춤 및 조절 가능) */
-    [data-testid="stSidebar"] div:has(> label > div > p:contains("해야 할 일 메모장")) textarea,
-    [data-testid="stSidebar"] textarea[aria-label*="자유롭게 메모하세요"] {
-        min-height: 150px !important;
-        height: 25vh !important;
+    /* 사이드바 '해야 할 일 메모장' 텍스트박스 (사용자 지정 높이 적용) */
+    [data-testid="stSidebar"] textarea[aria-label*="자유롭게 메모하세요"] {{
+        min-height: 100px !important;
+        height: {db_memo_height}px !important;
         resize: vertical !important;
-    }
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -227,17 +230,21 @@ with st.sidebar:
         st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
         st.rerun()
 
-    # --- 해야할 일 메모장 영역 ---
+    # --- 해야할 일 메모장 영역 (높이 조절 설정 포함) ---
     st.markdown("---")
     st.subheader("📝 해야 할 일 메모장")
-    current_memo = load_memo_db()
     
     with st.form("memo_form"):
-        memo_input = st.text_area("자유롭게 메모하세요", value=current_memo, placeholder="오늘 해야 할 일이나 아이디어를 적어두세요...")
-        memo_submitted = st.form_submit_button("💾 메모 저장하기", use_container_width=True)
+        memo_input = st.text_area("자유롭게 메모하세요", value=db_memo_content, placeholder="오늘 해야 할 일이나 아이디어를 적어두세요...")
+        
+        # 메모장 높이 설정 슬라이더 추가
+        memo_height_input = st.slider("메모장 세로 높이 조절 (픽셀)", min_value=100, max_value=800, value=int(db_memo_height), step=25)
+        
+        memo_submitted = st.form_submit_button("💾 메모 및 크기 저장하기", use_container_width=True)
         if memo_submitted:
-            save_memo_db(memo_input)
-            st.success("메모가 저장되었습니다!")
+            save_memo_db(memo_input, memo_height_input)
+            st.success("메모와 크기가 저장되었습니다!")
+            st.rerun()
 
 # 데이터 불러오기
 with st.spinner("데이터를 불러오는 중입니다..."):
