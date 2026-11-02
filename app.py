@@ -79,9 +79,6 @@ if "editing_task_id" not in st.session_state:
 if "show_calendar_modal" not in st.session_state:
     st.session_state.show_calendar_modal = False
 
-if "selected_cal_click_date" not in st.session_state:
-    st.session_state.selected_cal_click_date = None
-
 # --- 커스텀 CSS ---
 st.markdown("""
 <style>
@@ -92,14 +89,75 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
+
+# 4. Streamlit 네이티브 모달 팝업 함수 정의 (버튼 클릭 시 화면 중앙에 별도 창으로 뜸)
+@st.dialog("📅 날짜별 업무 관리 팝업", width="large")
+def date_task_modal(sel_date_str):
+    sel_d = datetime.strptime(sel_date_str, "%Y-%m-%d").date()
+    st.markdown(f"### 📌 {sel_d.strftime('%Y년 %m월 %d일')} 일정 관리")
+    
+    tasks = load_data()
+    date_matched_tasks = []
+    for t in tasks:
+        s_str = t.get("start_date")
+        d_str = t.get("due_date")
+        if s_str and d_str:
+            try:
+                if datetime.strptime(s_str, "%Y-%m-%d").date() <= sel_d <= datetime.strptime(d_str, "%Y-%m-%d").date():
+                    date_matched_tasks.append(t)
+            except:
+                pass
+
+    if date_matched_tasks:
+        st.write("#### 📋 해당 날짜의 기존 업무 목록")
+        for dt_task in date_matched_tasks:
+            tid = dt_task["id"]
+            with st.expander(f"[{dt_task['category']}] {dt_task['title']} (상태: {dt_task['status']})"):
+                st.write(f"기간: {dt_task.get('start_date')} ~ {dt_task.get('due_date')}")
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    if st.button("⚙️ 상세 편집 모드로 이동", key=f"modal_edit_{tid}", use_container_width=True):
+                        st.session_state.editing_task_id = tid
+                        st.session_state.show_calendar_modal = False
+                        st.rerun()
+                with col_p2:
+                    if st.button("🗑️ 이 업무 삭제", key=f"modal_del_{tid}", use_container_width=True):
+                        delete_task_db(tid)
+                        st.success("삭제되었습니다!")
+                        st.rerun()
+    else:
+        st.info("이 날짜에 진행 중인 업무가 없습니다.")
+
+    st.markdown("---")
+    st.subheader("➕ 이 날짜를 포함하는 새 업무 추가")
+    with st.form(key=f"modal_add_form_{sel_date_str}", clear_on_submit=True):
+        p_category = st.selectbox("업무 구분", CATEGORY_OPTIONS, key=f"modal_cat_{sel_date_str}")
+        p_title = st.text_input("업무 제목", key=f"modal_title_{sel_date_str}")
+        
+        p_col1, p_col2 = st.columns(2)
+        with p_col1:
+            p_start = st.date_input("시작일", value=sel_d, key=f"modal_start_{sel_date_str}")
+        with p_col2:
+            p_due = st.date_input("마감예정일", value=sel_d, key=f"modal_due_{sel_date_str}")
+
+        p_subtasks = st.text_area("세부 업무 리스트 (줄바꿈 구분)", placeholder="자료 조사\n결과보고", key=f"modal_sub_{sel_date_str}")
+
+        if st.form_submit_button("이 날짜 기준으로 업무 추가", use_container_width=True):
+            if p_title.strip():
+                sub_items = [s.strip() for s in p_subtasks.split("\n") if s.strip()]
+                add_task_db(p_category, p_title.strip(), sub_items, p_start, p_due)
+                st.success("업무가 추가되었습니다!")
+                st.rerun()
+            else:
+                st.warning("업무 제목을 입력해주세요.")
+
 # --- 앱 UI 레이아웃 시작 ---
 st.title("✅ 개인 업무 진행 상황 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
-CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
-
-# 4. 사이드바: 새 업무 등록 및 캘린더 버튼
+# 사이드바: 새 업무 등록 및 캘린더 버튼
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
@@ -133,24 +191,23 @@ with st.sidebar:
     st.subheader("📅 캘린더 일정 관리")
     if st.button("🗓️ 인터랙티브 캘린더 뷰 열기 / 토글", use_container_width=True, type="primary"):
         st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
-        st.session_state.selected_cal_click_date = None
         st.rerun()
 
 # 데이터 불러오기
 with st.spinner("데이터를 불러오는 중입니다..."):
     tasks = load_data()
 
-# 5. 인터랙티브 캘린더 뷰 영역 (년, 월, 주, 일 및 날짜 클릭 팝업 지원)
+# 5. 인터랙티브 캘린더 뷰 영역
 if st.session_state.show_calendar_modal:
     st.markdown("""
     <div style="padding: 20px; border-radius: 10px; border: 2px solid #2196F3; background-color: #e3f2fd; margin-bottom: 20px;">
         <h3 style="margin-top: 0; color: #0d47a1;">🗓️ 인터랙티브 구글 캘린더 뷰어</h3>
-        <p style="color: #333; font-size: 14px;">연, 월, 주, 일 단위로 일정을 탐색하고, 달력에서 특정 날짜를 클릭하면 해당 날짜에 업무를 추가하거나 수정·삭제할 수 있는 팝업 패널이 열립니다.</p>
+        <p style="color: #333; font-size: 14px;">기본값인 월간 캘린더를 통해 일정을 파악하고, 날짜별 팝업 버튼을 누르면 화면 중앙에 팝업 창이 열립니다.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # 캘린더 내부 단위 선택 탭
-    cal_view_mode = st.radio("캘린더 보기 단위 선택", ["연간 캘린더", "월간 캘린더", "주간 캘린더", "일간 캘린더"], horizontal=True)
+    # 기본값을 월간 캘린더(인덱스 1)로 설정
+    cal_view_mode = st.radio("캘린더 보기 단위 선택", ["연간 캘린더", "월간 캘린더", "주간 캘린더", "일간 캘린더"], index=1, horizontal=True)
 
     color_map = {
         "융합": "#e3f2fd", 
@@ -160,7 +217,6 @@ if st.session_state.show_calendar_modal:
         "기타": "#f3e5f5"
     }
 
-    # --- 1) 연간 캘린더 뷰 ---
     if cal_view_mode == "연간 캘린더":
         yr = st.number_input("조회할 연도 선택", min_value=2020, max_value=2035, value=date.today().year, step=1, key="cal_year_input")
         st.markdown(f"### 📅 {yr}년 연간 일정 개요")
@@ -185,11 +241,9 @@ if st.session_state.show_calendar_modal:
                                     except:
                                         pass
                 st.write(f"진행/예정된 업무 연관 일수: 총 {m_tasks_count}건")
-                if st.button(f"{m}월 상세 보기", key=f"go_month_{m}"):
-                    st.session_state.selected_cal_click_date = date(yr, m, 1)
-                    st.rerun()
+                if st.button(f"{m}월 1일로 팝업 열기", key=f"go_month_{m}"):
+                    date_task_modal(date(yr, m, 1).strftime("%Y-%m-%d"))
 
-    # --- 2) 월간 캘린더 뷰 (날짜 클릭 버튼 포함) ---
     elif cal_view_mode == "월간 캘린더":
         c_col1, c_col2 = st.columns(2)
         with c_col1:
@@ -197,7 +251,7 @@ if st.session_state.show_calendar_modal:
         with c_col2:
             cal_month = st.selectbox("조회 월 선택", list(range(1, 13)), index=date.today().month - 1)
 
-        st.markdown(f"### 📌 {cal_year}년 {cal_month}월 캘린더 (날짜를 클릭하세요)")
+        st.markdown(f"### 📌 {cal_year}년 {cal_month}월 캘린더 (날짜를 클릭하면 팝업 창이 뜹니다)")
 
         cal_matrix = calendar.monthcalendar(cal_year, cal_month)
         days_header = ["월", "화", "수", "목", "금", "토", "일"]
@@ -241,11 +295,9 @@ if st.session_state.show_calendar_modal:
                         </div>
                         """, unsafe_allow_html=True)
 
-                        if st.button(f"📅 {day}일 선택", key=f"click_day_{cal_year}_{cal_month}_{day}", use_container_width=True):
-                            st.session_state.selected_cal_click_date = curr_date
-                            st.rerun()
+                        if st.button(f"📅 {day}일 팝업", key=f"click_day_{cal_year}_{cal_month}_{day}", use_container_width=True):
+                            date_task_modal(curr_date.strftime("%Y-%m-%d"))
 
-    # --- 3) 주간 캘린더 뷰 ---
     elif cal_view_mode == "주간 캘린더":
         base_w_date = st.date_input("기준 날짜 선택 (해당 주 조회)", value=date.today(), key="weekly_date_picker")
         start_w = base_w_date - timedelta(days=base_w_date.weekday())
@@ -269,91 +321,17 @@ if st.session_state.show_calendar_modal:
                             pass
                 for dt in d_tasks:
                     st.caption(f"- [{dt['category']}] {dt['title']}")
-                if st.button("선택", key=f"w_click_{i}"):
-                    st.session_state.selected_cal_click_date = d_item
-                    st.rerun()
+                if st.button("팝업 열기", key=f"w_click_{i}"):
+                    date_task_modal(d_item.strftime("%Y-%m-%d"))
 
-    # --- 4) 일간 캘린더 뷰 ---
     elif cal_view_mode == "일간 캘린더":
         base_d_date = st.date_input("조회할 날짜 선택", value=date.today(), key="daily_date_picker")
-        if st.button("해당 날짜 편집 팝업 열기", use_container_width=True):
-            st.session_state.selected_cal_click_date = base_d_date
-            st.rerun()
-
-    # --- 팝업 모달 패널 (특정 날짜가 선택되었을 때 작동) ---
-    if st.session_state.selected_cal_click_date:
-        sel_d = st.session_state.selected_cal_click_date
-        st.markdown("---")
-        st.markdown(f"""
-        <div style="padding: 20px; border-radius: 10px; border: 2px solid #ff9800; background-color: #fff8e1;">
-            <h3 style="margin-top: 0; color: #e65100;">📌 날짜별 업무 팝업 관리 패널 ({sel_d.strftime('%Y년 %m월 %d일')})</h3>
-            <p style="font-size: 14px; color: #444;">이 날짜에 해당하는 업무 목록을 확인하거나, 새로운 업무를 즉시 등록·수정·삭제할 수 있습니다.</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 1. 해당 날짜에 포함된 업무 목록 조회 및 간편 수정/삭제
-        date_matched_tasks = []
-        for t in tasks:
-            s_str = t.get("start_date")
-            d_str = t.get("due_date")
-            if s_str and d_str:
-                try:
-                    if datetime.strptime(s_str, "%Y-%m-%d").date() <= sel_d <= datetime.strptime(d_str, "%Y-%m-%d").date():
-                        date_matched_tasks.append(t)
-                except:
-                    pass
-
-        if date_matched_tasks:
-            st.write("#### 📋 해당 날짜의 기존 업무 목록")
-            for dt_task in date_matched_tasks:
-                tid = dt_task["id"]
-                with st.expander(f"[{dt_task['category']}] {dt_task['title']} (상태: {dt_task['status']})"):
-                    st.write(f"기간: {dt_task.get('start_date')} ~ {dt_task.get('due_date')}")
-                    col_p1, col_p2 = st.columns(2)
-                    with col_p1:
-                        if st.button("⚙️ 상세 편집 모드로 이동", key=f"popup_edit_{tid}", use_container_width=True):
-                            st.session_state.editing_task_id = tid
-                            st.session_state.show_calendar_modal = False
-                            st.rerun()
-                    with col_p2:
-                        if st.button("🗑️ 이 업무 삭제", key=f"popup_del_{tid}", use_container_width=True):
-                            delete_task_db(tid)
-                            st.success("삭제되었습니다!")
-                            st.rerun()
-        else:
-            st.info("이 날짜에 진행 중인 업무가 없습니다.")
-
-        st.markdown("---")
-        st.subheader("➕ 이 날짜를 포함하는 새 업무 빠르게 추가하기")
-        with st.form("popup_add_form", clear_on_submit=True):
-            p_category = st.selectbox("업무 구분", CATEGORY_OPTIONS, key="pop_cat")
-            p_title = st.text_input("업무 제목", key="pop_title")
-            
-            p_col1, p_col2 = st.columns(2)
-            with p_col1:
-                p_start = st.date_input("시작일", value=sel_d, key="pop_start")
-            with p_col2:
-                p_due = st.date_input("마감예정일", value=sel_d, key="pop_due")
-
-            p_subtasks = st.text_area("세부 업무 리스트 (줄바꿈 구분)", placeholder="자료 조사\n결과보고", key="pop_sub")
-
-            if st.form_submit_button("이 날짜 기준으로 업무 추가", use_container_width=True):
-                if p_title.strip():
-                    sub_items = [s.strip() for s in p_subtasks.split("\n") if s.strip()]
-                    add_task_db(p_category, p_title.strip(), sub_items, p_start, p_due)
-                    st.success("업무가 추가되었습니다!")
-                    st.rerun()
-                else:
-                    st.warning("업무 제목을 입력해주세요.")
-
-        if st.button("❌ 팝업 닫기", use_container_width=True):
-            st.session_state.selected_cal_click_date = None
-            st.rerun()
+        if st.button("해당 날짜 팝업 창 열기", use_container_width=True, type="primary"):
+            date_task_modal(base_d_date.strftime("%Y-%m-%d"))
 
     st.markdown("---")
     if st.button("❌ 캘린더 전체 뷰 닫기", use_container_width=True):
         st.session_state.show_calendar_modal = False
-        st.session_state.selected_cal_click_date = None
         st.rerun()
 
     st.markdown("---")
@@ -826,7 +804,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_인터랙티브캘린더_{today_str}.xlsx",
+                file_name=f"업무진행상황_모달팝업반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
