@@ -739,7 +739,7 @@ with tab2:
         if sel_progress: selected_statuses.append("진행중")
         if sel_completed: selected_statuses.append("완료")
 
-        filtered_export_tasks = [t for t in tasks if t.get("status"] in selected_statuses]
+        filtered_export_tasks = [t for t in tasks if t.get("status") in selected_statuses]
 
         if not filtered_export_tasks:
             st.warning("선택된 상태의 업무가 없습니다. 적어도 하나의 상태를 체크해주세요.")
