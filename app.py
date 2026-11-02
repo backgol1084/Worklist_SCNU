@@ -39,11 +39,9 @@ def load_memo_db():
         if response.data:
             return response.data[0].get("content", "")
         else:
-            # 메모 테이블에 기본 row가 없으면 삽입
             supabase.table("memos").insert({"id": 1, "content": ""}).execute()
             return ""
     except Exception as e:
-        # memos 테이블이 아직 없는 경우를 대비한 예외 처리
         return ""
 
 def save_memo_db(content):
@@ -100,12 +98,20 @@ if "editing_task_id" not in st.session_state:
 if "show_calendar_modal" not in st.session_state:
     st.session_state.show_calendar_modal = False
 
-# --- 커스텀 CSS ---
+# --- 커스텀 CSS (텍스트박스 자동 채우기 스타일 적용) ---
 st.markdown("""
 <style>
+    /* 기본 텍스트area 높이 조절 */
     textarea {
         resize: vertical !important;
         min-height: 100px !important;
+    }
+    
+    /* 사이드바 내부의 메모장 텍스트박스를 화면 비율에 맞게 꽉 차도록 설정 */
+    [data-testid="stSidebar"] textarea {
+        min-height: 250px !important;
+        height: 35vh !important;
+        width: 100% !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -178,7 +184,7 @@ st.title("✅ 개인 업무 진행 상황 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
-# 사이드바: 새 업무 등록, 캘린더 버튼, 그리고 해야할 일 메모장 추가
+# 사이드바: 새 업무 등록, 캘린더 버튼, 그리고 화면 비율에 맞게 확장되는 메모장
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
@@ -214,13 +220,13 @@ with st.sidebar:
         st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
         st.rerun()
 
-    # --- 해야할 일 메모장 영역 ---
+    # --- 해야할 일 메모장 영역 (화면 비율 맞춤) ---
     st.markdown("---")
     st.subheader("📝 해야 할 일 메모장")
     current_memo = load_memo_db()
     
     with st.form("memo_form"):
-        memo_input = st.text_area("자유롭게 메모하세요", value=current_memo, height=150, placeholder="오늘 해야 할 일이나 아이디어를 적어두세요...")
+        memo_input = st.text_area("자유롭게 메모하세요", value=current_memo, placeholder="오늘 해야 할 일이나 아이디어를 적어두세요...")
         memo_submitted = st.form_submit_button("💾 메모 저장하기", use_container_width=True)
         if memo_submitted:
             save_memo_db(memo_input)
