@@ -8,7 +8,7 @@ from io import BytesIO
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
-    page_title="HYO'S 업무 진행 상황 관리",
+    page_title="개인 업무 진행 상황 관리",
     page_icon="✅",
     layout="wide"
 )
@@ -31,6 +31,27 @@ def load_data():
     except Exception as e:
         st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
         return []
+
+def load_memo_db():
+    """DB에서 메모 불러오기 (없으면 생성)"""
+    try:
+        response = supabase.table("memos").select("*").eq("id", 1).execute()
+        if response.data:
+            return response.data[0].get("content", "")
+        else:
+            # 메모 테이블에 기본 row가 없으면 삽입
+            supabase.table("memos").insert({"id": 1, "content": ""}).execute()
+            return ""
+    except Exception as e:
+        # memos 테이블이 아직 없는 경우를 대비한 예외 처리
+        return ""
+
+def save_memo_db(content):
+    """DB에 메모 저장하기"""
+    try:
+        supabase.table("memos").upsert({"id": 1, "content": content}).execute()
+    except Exception as e:
+        st.error(f"메모 저장 중 오류가 발생했습니다: {e}")
 
 def add_task_db(category, title, subtasks, start_date, due_date):
     """새로운 업무, 세부 체크리스트 및 일정 추가"""
@@ -153,11 +174,11 @@ def date_task_modal(sel_date_str):
                 st.warning("업무 제목을 입력해주세요.")
 
 # --- 앱 UI 레이아웃 시작 ---
-st.title("✅ HYO'S 업무 진행 관리 앱")
+st.title("✅ 개인 업무 진행 상황 관리 앱")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
-# 사이드바: 새 업무 등록 및 캘린더 버튼
+# 사이드바: 새 업무 등록, 캘린더 버튼, 그리고 해야할 일 메모장 추가
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
@@ -193,6 +214,18 @@ with st.sidebar:
         st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
         st.rerun()
 
+    # --- 해야할 일 메모장 영역 ---
+    st.markdown("---")
+    st.subheader("📝 해야 할 일 메모장")
+    current_memo = load_memo_db()
+    
+    with st.form("memo_form"):
+        memo_input = st.text_area("자유롭게 메모하세요", value=current_memo, height=150, placeholder="오늘 해야 할 일이나 아이디어를 적어두세요...")
+        memo_submitted = st.form_submit_button("💾 메모 저장하기", use_container_width=True)
+        if memo_submitted:
+            save_memo_db(memo_input)
+            st.success("메모가 저장되었습니다!")
+
 # 데이터 불러오기
 with st.spinner("데이터를 불러오는 중입니다..."):
     tasks = load_data()
@@ -224,7 +257,7 @@ if st.session_state.show_calendar_modal:
         for m in range(1, 13):
             with y_cols[(m - 1) % 3]:
                 st.markdown(f"**--- {m}월 ---**")
-                cal_obj = calendar.Calendar(firstweekday=6) # 일요일 시작
+                cal_obj = calendar.Calendar(firstweekday=6)
                 m_matrix = cal_obj.monthdayscalendar(yr, m)
                 m_tasks_count = 0
                 for week in m_matrix:
@@ -253,13 +286,12 @@ if st.session_state.show_calendar_modal:
 
         st.markdown(f"### 📌 {cal_year}년 {cal_month}월 캘린더 (날짜를 클릭하면 팝업 창이 뜹니다)")
 
-        cal_obj = calendar.Calendar(firstweekday=6) # 일요일 시작
+        cal_obj = calendar.Calendar(firstweekday=6)
         cal_matrix = cal_obj.monthdayscalendar(cal_year, cal_month)
         days_header = ["일", "월", "화", "수", "목", "금", "토"]
 
         head_cols = st.columns(7)
         for idx, day_name in enumerate(days_header):
-            # 일요일(0)은 빨간색, 토요일(6)은 파란색
             header_color = '#d32f2f' if idx == 0 else ('#1976d2' if idx == 6 else '#333')
             head_cols[idx].markdown(f"<div style='text-align: center; font-weight: bold; color: {header_color};'>{day_name}</div>", unsafe_allow_html=True)
 
@@ -304,7 +336,6 @@ if st.session_state.show_calendar_modal:
 
     elif cal_view_mode == "주간 캘린더":
         base_w_date = st.date_input("기준 날짜 선택 (해당 주 조회)", value=date.today(), key="weekly_date_picker")
-        # 일요일 시작 기준으로 주의 시작일 계산
         start_w = base_w_date - timedelta(days=(base_w_date.weekday() + 1) % 7)
         end_w = start_w + timedelta(days=6)
         st.markdown(f"### 📌 주간 일정 ({start_w.strftime('%Y-%m-%d')} ~ {end_w.strftime('%Y-%m-%d')})")
@@ -811,7 +842,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_일요일시작_{today_str}.xlsx",
+                file_name=f"업무진행상황_메모장반영_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
