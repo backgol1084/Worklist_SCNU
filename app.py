@@ -8,7 +8,7 @@ from io import BytesIO
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
-    page_title="개인 업무 진행 상황 관리",
+    page_title="HYO's 업무 진행 관리",
     page_icon="✅",
     layout="wide"
 )
@@ -98,7 +98,7 @@ if "editing_task_id" not in st.session_state:
 if "show_calendar_modal" not in st.session_state:
     st.session_state.show_calendar_modal = False
 
-# --- 커스텀 CSS (텍스트박스 자동 채우기 스타일 적용) ---
+# --- 커스텀 CSS (사이드바 텍스트박스 반응형 자동 채우기 스타일 적용) ---
 st.markdown("""
 <style>
     /* 기본 텍스트area 높이 조절 */
@@ -107,10 +107,10 @@ st.markdown("""
         min-height: 100px !important;
     }
     
-    /* 사이드바 내부의 메모장 텍스트박스를 화면 비율에 맞게 꽉 차도록 설정 */
+    /* 사이드바 내부 텍스트박스들을 화면 비율에 맞게 꽉 차도록 설정 */
     [data-testid="stSidebar"] textarea {
-        min-height: 250px !important;
-        height: 35vh !important;
+        min-height: 180px !important;
+        height: 25vh !important;
         width: 100% !important;
     }
 </style>
@@ -180,11 +180,11 @@ def date_task_modal(sel_date_str):
                 st.warning("업무 제목을 입력해주세요.")
 
 # --- 앱 UI 레이아웃 시작 ---
-st.title("✅ 개인 업무 진행 상황 관리 앱")
+st.title("✅ HYO's 업무 진행 관리")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
-# 사이드바: 새 업무 등록, 캘린더 버튼, 그리고 화면 비율에 맞게 확장되는 메모장
+# 사이드바: 새 업무 등록, 캘린더 버튼, 그리고 메모장
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
@@ -220,7 +220,7 @@ with st.sidebar:
         st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
         st.rerun()
 
-    # --- 해야할 일 메모장 영역 (화면 비율 맞춤) ---
+    # --- 해야할 일 메모장 영역 ---
     st.markdown("---")
     st.subheader("📝 해야 할 일 메모장")
     current_memo = load_memo_db()
@@ -739,7 +739,7 @@ with tab2:
         if sel_progress: selected_statuses.append("진행중")
         if sel_completed: selected_statuses.append("완료")
 
-        filtered_export_tasks = [t for t in tasks if t.get("status") in selected_statuses]
+        filtered_export_tasks = [t for t in tasks if t.get("status"] in selected_statuses]
 
         if not filtered_export_tasks:
             st.warning("선택된 상태의 업무가 없습니다. 적어도 하나의 상태를 체크해주세요.")
@@ -848,7 +848,7 @@ with tab2:
             st.download_button(
                 label="📊 세부 일정 및 셀 병합된 엑셀 파일 다운로드 (.xlsx)",
                 data=excel_file,
-                file_name=f"업무진행상황_메모장반영_{today_str}.xlsx",
+                file_name=f"HYOs업무진행관리_{today_str}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
