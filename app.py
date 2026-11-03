@@ -157,75 +157,76 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 요청하신 순서 (가치, 기초, 융합, 전공, 산학, 기타)
+# 요청하신 카테고리 순서
 CATEGORY_OPTIONS = ["가치", "기초", "융합", "전공", "산학", "기타"]
 
-# 4. 날짜별 업무 관리 팝업 함수
+# 4. 공통 헬퍼: 특정 날짜에 포함되는 '세부 업무' 목록 추출 함수
+def get_subtasks_for_date(tasks, target_date):
+    """특정 날짜(target_date)가 세부 업무의 시작일~종료일에 포함되는 항목들을 추출"""
+    matched_items = []
+    for t in tasks:
+        subtasks = t.get("subtasks", [])
+        default_start = t.get("start_date")
+        default_end = t.get("due_date")
+        
+        for sub in subtasks:
+            if isinstance(sub, dict):
+                sub_name = sub.get("name", "")
+                sub_start = sub.get("start_date") or default_start
+                sub_end = sub.get("end_date") or default_end
+            else:
+                sub_name = str(sub)
+                sub_start = default_start
+                sub_end = default_end
+                
+            if sub_start and sub_end:
+                try:
+                    s_dt = datetime.strptime(sub_start, "%Y-%m-%d").date()
+                    e_dt = datetime.strptime(sub_end, "%Y-%m-%d").date()
+                    if s_dt <= target_date <= e_dt:
+                        matched_items.append({
+                            "task_id": t["id"],
+                            "category": t.get("category", "기타"),
+                            "task_title": t["title"],
+                            "sub_name": sub_name,
+                            "done": sub.get("done", False),
+                            "status": t["status"]
+                        })
+                except:
+                    pass
+    return matched_items
+
+# 5. 날짜별 업무 관리 팝업 함수
 @st.dialog("📅 날짜별 업무 관리 팝업", width="large")
 def date_task_modal(sel_date_str):
     sel_d = datetime.strptime(sel_date_str, "%Y-%m-%d").date()
-    st.markdown(f"### 📌 {sel_d.strftime('%Y년 %m월 %d일')} 일정 관리")
+    st.markdown(f"### 📌 {sel_d.strftime('%Y년 %m월 %d일')} 세부 일정 관리")
     
     tasks = load_data()
-    date_matched_tasks = []
-    for t in tasks:
-        s_str = t.get("start_date")
-        d_str = t.get("due_date")
-        if s_str and d_str:
-            try:
-                if datetime.strptime(s_str, "%Y-%m-%d").date() <= sel_d <= datetime.strptime(d_str, "%Y-%m-%d").date():
-                    date_matched_tasks.append(t)
-            except:
-                pass
+    matched_subtasks = get_subtasks_for_date(tasks, sel_d)
 
-    if date_matched_tasks:
-        st.write("#### 📋 해당 날짜의 기존 업무 목록")
-        for dt_task in date_matched_tasks:
-            tid = dt_task["id"]
-            with st.expander(f"[{dt_task['category']}] {dt_task['title']} (상태: {dt_task['status']})"):
-                st.write(f"기간: {dt_task.get('start_date')} ~ {dt_task.get('due_date')}")
+    if matched_subtasks:
+        st.write("#### 📋 해당 날짜에 진행되는 세부 업무 목록")
+        for item in matched_subtasks:
+            with st.expander(f"[{item['category']}] {item['task_title']} ➔ {item['sub_name']} ({'완료' if item['done'] else '진행중'})"):
                 col_p1, col_p2 = st.columns(2)
                 with col_p1:
-                    if st.button("⚙️ 상세 편집 모드로 이동", key=f"modal_edit_{tid}", use_container_width=True):
-                        st.session_state.editing_task_id = tid
+                    if st.button("⚙️ 상세 편집 모드로 이동", key=f"modal_edit_{item['task_id']}_{item['sub_name']}", use_container_width=True):
+                        st.session_state.editing_task_id = item['task_id']
                         st.session_state.show_calendar_modal = False
                         st.rerun()
-                with col_p2:
-                    if st.button("🗑️ 이 업무 삭제", key=f"modal_del_{tid}", use_container_width=True):
-                        delete_task_db(tid)
-                        st.success("삭제되었습니다!")
-                        st.rerun()
     else:
-        st.info("이 날짜에 진행 중인 업무가 없습니다.")
+        st.info("이 날짜에 포함되는 세부 업무가 없습니다.")
 
     st.markdown("---")
-    st.subheader("➕ 이 날짜를 포함하는 새 업무 추가")
-    with st.form(key=f"modal_add_form_{sel_date_str}", clear_on_submit=True):
-        p_category = st.selectbox("업무 구분", CATEGORY_OPTIONS, key=f"modal_cat_{sel_date_str}")
-        p_title = st.text_input("업무 제목", key=f"modal_title_{sel_date_str}")
-        
-        p_col1, p_col2 = st.columns(2)
-        with p_col1:
-            p_start = st.date_input("시작일", value=sel_d, key=f"modal_start_{sel_date_str}")
-        with p_col2:
-            p_due = st.date_input("마감예정일", value=sel_d, key=f"modal_due_{sel_date_str}")
+    st.subheader("➕ 새 업무 등록으로 이동")
+    st.caption("새로운 업무 및 세부 일정 등록은 메인 화면의 사이드바를 이용해주세요.")
 
-        p_subtasks = st.text_area("세부 업무 리스트 (줄바꿈 구분)", placeholder="자료 조사\n결과보고", key=f"modal_sub_{sel_date_str}")
-
-        if st.form_submit_button("이 날짜 기준으로 업무 추가", use_container_width=True):
-            if p_title.strip():
-                sub_items = [s.strip() for s in p_subtasks.split("\n") if s.strip()]
-                add_task_db(p_category, p_title.strip(), sub_items, p_start, p_due)
-                st.success("업무가 추가되었습니다!")
-                st.rerun()
-            else:
-                st.warning("업무 제목을 입력해주세요.")
-
-# 5. 회의자료 레포팅 팝업 함수 (기타 포함)
+# 6. 회의자료 레포팅 팝업 함수
 @st.dialog("📊 주간·월간 회의자료 추진실적 레포트", width="large")
 def meeting_report_modal():
     st.markdown("### 📋 회의용 추진실적 자동 레포팅")
-    st.write("조회할 기준 날짜와 업무구분을 선택하여 과거 및 현재의 추진 실적을 확인하세요.")
+    st.write("조회할 기준 날짜와 업무구분을 선택하여 과거 및 현재의 세부 추진 실적을 확인하세요.")
     
     col_r1, col_r2 = st.columns(2)
     with col_r1:
@@ -259,25 +260,34 @@ def meeting_report_modal():
     prev_month_last_day = calendar.monthrange(prev_year, prev_month)[1]
     prev_month_end = date(prev_year, prev_month, prev_month_last_day)
 
-    def filter_tasks_by_date(start_d, end_d):
-        matched = []
+    def filter_tasks_by_subtask_date(start_d, end_d):
+        matched_tasks_dict = {}
         for t in tasks:
-            s_str = t.get("start_date")
-            d_str = t.get("due_date")
-            if s_str and d_str:
-                try:
-                    s_dt = datetime.strptime(s_str, "%Y-%m-%d").date()
-                    d_dt = datetime.strptime(d_str, "%Y-%m-%d").date()
-                    if not (d_dt < start_d or s_dt > end_d):
-                        matched.append(t)
-                except:
-                    pass
-        return matched
+            default_start = t.get("start_date")
+            default_end = t.get("due_date")
+            for sub in t.get("subtasks", []):
+                if isinstance(sub, dict):
+                    s_date = sub.get("start_date") or default_start
+                    e_date = sub.get("end_date") or default_end
+                else:
+                    s_date = default_start
+                    e_date = default_end
+                
+                if s_date and e_date:
+                    try:
+                        s_dt = datetime.strptime(s_date, "%Y-%m-%d").date()
+                        e_dt = datetime.strptime(e_date, "%Y-%m-%d").date()
+                        if not (e_dt < start_d or s_dt > end_d):
+                            if t["id"] not in matched_tasks_dict:
+                                matched_tasks_dict[t["id"]] = t
+                    except:
+                        pass
+        return list(matched_tasks_dict.values())
 
-    prev_week_tasks = filter_tasks_by_date(prev_week_start, prev_week_end)
-    curr_week_tasks = filter_tasks_by_date(curr_week_start, curr_week_end)
-    prev_month_tasks = filter_tasks_by_date(prev_month_start, prev_month_end)
-    curr_month_tasks = filter_tasks_by_date(curr_month_start, curr_month_end)
+    prev_week_tasks = filter_tasks_by_subtask_date(prev_week_start, prev_week_end)
+    curr_week_tasks = filter_tasks_by_subtask_date(curr_week_start, curr_week_end)
+    prev_month_tasks = filter_tasks_by_subtask_date(prev_month_start, prev_month_end)
+    curr_month_tasks = filter_tasks_by_subtask_date(curr_month_start, curr_month_end)
 
     tab_w, tab_m = st.tabs(["📅 주간 추진실적", "📆 월간 추진실적"])
 
@@ -289,9 +299,9 @@ def meeting_report_modal():
                 for sub in t.get("subtasks", []):
                     if isinstance(sub, dict):
                         icon = "✅" if sub.get("done") else "⏳"
-                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} {f'(메모: {sub.get("memo")})' if sub.get('memo') else ''}")
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {f'메모: {sub.get(\"memo\")}' if sub.get('memo') else ''}")
         else:
-            st.info("해당 주간에 진행된 업무가 없습니다.")
+            st.info("해당 주간에 진행된 세부 업무가 없습니다.")
 
         st.markdown("---")
         st.markdown(f"#### ▶️ 선택한 주간 추진실적 및 계획 ({curr_week_start.strftime('%m/%d')} ~ {curr_week_end.strftime('%m/%d')})")
@@ -301,25 +311,25 @@ def meeting_report_modal():
                 for sub in t.get("subtasks", []):
                     if isinstance(sub, dict):
                         icon = "✅" if sub.get("done") else "⏳"
-                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} {f'(메모: {sub.get("memo")})' if sub.get('memo') else ''}")
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {f'메모: {sub.get(\"memo\")}' if sub.get('memo') else ''}")
         else:
-            st.info("해당 주간에 예정된 업무가 없습니다.")
+            st.info("해당 주간에 예정된 세부 업무가 없습니다.")
 
     with tab_m:
         st.markdown(f"#### ◀️ 지난달 실적 ({prev_month_start.strftime('%Y년 %m월')})")
         if prev_month_tasks:
             for t in prev_month_tasks:
-                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']}, 기간: {t.get('start_date')} ~ {t.get('due_date')})")
+                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
         else:
-            st.info("해당 월에 진행된 업무가 없습니다.")
+            st.info("해당 월에 진행된 세부 업무가 없습니다.")
 
         st.markdown("---")
         st.markdown(f"#### ▶️ 선택한 달 추진실적 및 계획 ({curr_month_start.strftime('%Y년 %m월')})")
         if curr_month_tasks:
             for t in curr_month_tasks:
-                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']}, 기간: {t.get('start_date')} ~ {t.get('due_date')})")
+                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
         else:
-            st.info("해당 월에 예정된 업무가 없습니다.")
+            st.info("해당 월에 예정된 세부 업무가 없습니다.")
 
     st.markdown("---")
     if st.button("닫기", use_container_width=True):
@@ -388,16 +398,16 @@ with st.sidebar:
 with st.spinner("데이터를 불러오는 중입니다..."):
     tasks = load_data()
 
-# 6. 회의자료 모달 자동 실행 처리
+# 7. 회의자료 모달 자동 실행 처리
 if st.session_state.show_meeting_modal:
     meeting_report_modal()
 
-# 7. 인터랙티브 캘린더 뷰 영역
+# 8. 인터랙티브 캘린더 뷰 영역 (세부 업무 일정 기준 적용)
 if st.session_state.show_calendar_modal:
     st.markdown("""
     <div style="padding: 20px; border-radius: 10px; border: 2px solid #2196F3; background-color: #e3f2fd; margin-bottom: 20px;">
         <h3 style="margin-top: 0; color: #0d47a1;">🗓️ 인터랙티브 구글 캘린더 뷰어</h3>
-        <p style="color: #333; font-size: 14px;">기본값인 월간 캘린더를 통해 일정을 파악하고, 날짜별 팝업 버튼을 누르면 화면 중앙에 팝업 창이 열립니다.</p>
+        <p style="color: #333; font-size: 14px;">세부 업무별 시작일 및 종료일 기준으로 일정이 표시됩니다. 날짜를 클릭하면 해당 날짜의 세부 업무를 관리할 수 있습니다.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -427,16 +437,9 @@ if st.session_state.show_calendar_modal:
                     for day in week:
                         if day != 0:
                             curr_d = date(yr, m, day)
-                            for t in tasks:
-                                s_str = t.get("start_date")
-                                d_str = t.get("due_date")
-                                if s_str and d_str:
-                                    try:
-                                        if datetime.strptime(s_str, "%Y-%m-%d").date() <= curr_d <= datetime.strptime(d_str, "%Y-%m-%d").date():
-                                            m_tasks_count += 1
-                                    except:
-                                        pass
-                st.write(f"진행/예정된 업무 연관 일수: 총 {m_tasks_count}건")
+                            sub_list = get_subtasks_for_date(tasks, curr_d)
+                            m_tasks_count += len(sub_list)
+                st.write(f"진행/예정된 세부 업무 일수: 총 {m_tasks_count}건")
                 if st.button(f"{m}월 1일로 팝업 열기", key=f"go_month_{m}"):
                     date_task_modal(date(yr, m, 1).strftime("%Y-%m-%d"))
 
@@ -466,22 +469,13 @@ if st.session_state.show_calendar_modal:
                         st.markdown("<div style='min-height: 120px; background-color: #fcfcfc; border: 1px solid #eee; border-radius: 4px; padding: 4px;'></div>", unsafe_allow_html=True)
                     else:
                         curr_date = date(cal_year, cal_month, day)
-                        day_tasks = []
-                        for t in tasks:
-                            s_str = t.get("start_date")
-                            d_str = t.get("due_date")
-                            if s_str and d_str:
-                                try:
-                                    if datetime.strptime(s_str, "%Y-%m-%d").date() <= curr_date <= datetime.strptime(d_str, "%Y-%m-%d").date():
-                                        day_tasks.append(t)
-                                except:
-                                    pass
+                        day_subtasks = get_subtasks_for_date(tasks, curr_date)
 
                         badges_html = ""
-                        for dt_task in day_tasks:
-                            cat = dt_task.get("category", "기타")
+                        for item in day_subtasks:
+                            cat = item["category"]
                             bg_color = color_map.get(cat, "#f0f2f6")
-                            badges_html += f"<div style='font-size: 10px; background-color: {bg_color}; padding: 1px 3px; margin-bottom: 2px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' title='{dt_task['title']}'><b>[{cat}]</b> {dt_task['title']}</div>"
+                            badges_html += f"<div style='font-size: 10px; background-color: {bg_color}; padding: 1px 3px; margin-bottom: 2px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' title='{item['sub_name']}'><b>[{cat}]</b> {item['sub_name']}</div>"
 
                         is_today = (curr_date == date.today())
                         border_style = "border: 2px solid #4CAF50;" if is_today else "border: 1px solid #ddd;"
@@ -510,18 +504,9 @@ if st.session_state.show_calendar_modal:
             with w_cols[i]:
                 d_color = '#d32f2f' if i == 0 else ('#1976d2' if i == 6 else '#333')
                 st.markdown(f"<div style='color: {d_color}; font-weight: bold;'>{d_item.strftime('%m/%d')} ({day_labels[i]})</div>", unsafe_allow_html=True)
-                d_tasks = []
-                for t in tasks:
-                    s_str = t.get("start_date")
-                    d_str = t.get("due_date")
-                    if s_str and d_str:
-                        try:
-                            if datetime.strptime(s_str, "%Y-%m-%d").date() <= d_item <= datetime.strptime(d_str, "%Y-%m-%d").date():
-                                d_tasks.append(t)
-                        except:
-                            pass
-                for dt in d_tasks:
-                    st.caption(f"- [{dt['category']}] {dt['title']}")
+                d_subtasks = get_subtasks_for_date(tasks, d_item)
+                for item in d_subtasks:
+                    st.caption(f"- [{item['category']}] {item['sub_name']}")
                 if st.button("팝업 열기", key=f"w_click_{i}"):
                     date_task_modal(d_item.strftime("%Y-%m-%d"))
 
@@ -537,7 +522,7 @@ if st.session_state.show_calendar_modal:
 
     st.markdown("---")
 
-# 8. 메인 화면: 탭 구성
+# 9. 메인 화면: 탭 구성
 tab1, tab2 = st.tabs(["📋 업무 진행 & 관리", "📊 한눈에 보기 & 엑셀 다운로드"])
 
 with tab1:
