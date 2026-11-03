@@ -240,7 +240,7 @@ def meeting_report_modal():
     base_date = report_base_date
 
     if report_cat_filter != "전체":
-        tasks = [t for t in tasks if t.get("category")] == report_cat_filter]
+        tasks = [t for t in tasks if t.get("category") == report_cat_filter]
 
     curr_week_start = base_date - timedelta(days=base_date.weekday())
     curr_week_end = curr_week_start + timedelta(days=6)
@@ -280,7 +280,6 @@ def meeting_report_modal():
                     try:
                         s_dt = datetime.strptime(s_date, "%Y-%m-%d").date()
                         e_dt = datetime.strptime(e_date, "%Y-%m-%d").date()
-                        # 기간이 겹치는지 확인
                         if not (e_dt < start_d or s_dt > end_d):
                             matched_subs.append(sub)
                     except:
@@ -301,7 +300,7 @@ def meeting_report_modal():
     tab_w, tab_m = st.tabs(["📅 주간 추진실적", "📆 월간 추진실적"])
 
     with tab_w:
-        st.markdown(f"#### ◀️ 저번 주 실적 ({prev_week_start.strftime('%m/%d')} ~ {prev_week_end.strftime('%m/%d')})[cite: 5]")
+        st.markdown(f"#### ◀️ 저번 주 실적 ({prev_week_start.strftime('%m/%d')} ~ {prev_week_end.strftime('%m/%d')})")
         if prev_week_reports:
             for item in prev_week_reports:
                 t = item["task"]
@@ -312,7 +311,7 @@ def meeting_report_modal():
                         memo_text = f"메모: {sub.get('memo')}" if sub.get('memo') else ""
                         st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {memo_text}")
         else:
-            st.info("저번 주간에 진행된 세부 업무가 없습니다[cite: 5].")
+            st.info("저번 주간에 진행된 세부 업무가 없습니다.")
 
         st.markdown("---")
         st.markdown(f"#### ▶️ 이번 주 추진실적 및 계획 ({curr_week_start.strftime('%m/%d')} ~ {curr_week_end.strftime('%m/%d')})")
@@ -738,7 +737,7 @@ with tab1:
         status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
         def render_task_cards(target_statuses, tab_prefix):
-            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category"] == selected_cat]
+            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category") == selected_cat]
             res = [t for t in res if t["status"] in target_statuses]
 
             filtered_by_period = []
