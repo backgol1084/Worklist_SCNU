@@ -240,7 +240,7 @@ def meeting_report_modal():
     base_date = report_base_date
 
     if report_cat_filter != "전체":
-        tasks = [t for t in tasks if t.get("category"] == report_cat_filter]
+        tasks = [t for t in tasks if t.get("category")] == report_cat_filter]
 
     curr_week_start = base_date - timedelta(days=base_date.weekday())
     curr_week_end = curr_week_start + timedelta(days=6)
