@@ -203,24 +203,32 @@ def date_task_modal(sel_date_str):
             else:
                 st.warning("업무 제목을 입력해주세요.")
 
-# 5. 회의자료 레포팅 팝업 함수
+# 5. 회의자료 레포팅 팝업 함수 (날짜 선택 기능 추가)
 @st.dialog("📊 주간·월간 회의자료 추진실적 레포트", width="large")
 def meeting_report_modal():
     st.markdown("### 📋 회의용 추진실적 자동 레포팅")
-    st.write("등록된 업무 및 세부 항목의 일정·완료 데이터를 바탕으로 주간 및 월간 실적을 집계합니다.")
+    st.write("기준이 될 연도와 월, 또는 특정 주간의 기준일을 선택하여 과거 및 현재의 추진 실적을 조회하세요.")
+    
+    # 날짜 선택 컨트롤 영역
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        report_base_date = st.date_input("조회 기준 날짜 선택 (해당 주 및 해당 월 자동 계산)", value=date.today(), key="report_base_date_input")
+    with col_r2:
+        st.info("💡 선택한 날짜가 속한 '주(週)' 및 '월(月)'을 기준으로 지난 실적과 이번 실적이 자동 비교됩니다.")
+
     st.markdown("---")
 
     tasks = load_data()
-    today = date.today()
+    base_date = report_base_date
 
-    # 주간 계산 (월요일 시작 기준)
-    curr_week_start = today - timedelta(days=today.weekday())
+    # 선택된 기준 날짜 기준 주간 계산 (월요일 시작 기준)
+    curr_week_start = base_date - timedelta(days=base_date.weekday())
     curr_week_end = curr_week_start + timedelta(days=6)
     prev_week_start = curr_week_start - timedelta(days=7)
     prev_week_end = curr_week_start - timedelta(days=1)
 
-    # 월간 계산
-    curr_year, curr_month = today.year, today.month
+    # 선택된 기준 날짜 기준 월간 계산
+    curr_year, curr_month = base_date.year, base_date.month
     curr_month_start = date(curr_year, curr_month, 1)
     curr_month_last_day = calendar.monthrange(curr_year, curr_month)[1]
     curr_month_end = date(curr_year, curr_month, curr_month_last_day)
@@ -242,7 +250,6 @@ def meeting_report_modal():
                 try:
                     s_dt = datetime.strptime(s_str, "%Y-%m-%d").date()
                     d_dt = datetime.strptime(d_str, "%Y-%m-%d").date()
-                    # 기간이 겹치는 경우 포함
                     if not (d_dt < start_d or s_dt > end_d):
                         matched.append(t)
                 except:
@@ -257,7 +264,7 @@ def meeting_report_modal():
     tab_w, tab_m = st.tabs(["📅 주간 추진실적", "📆 월간 추진실적"])
 
     with tab_w:
-        st.markdown(f"#### ◀️ 지난주 실적 ({prev_week_start.strftime('%m/%d')} ~ {prev_week_end.strftime('%m/%d')})")
+        st.markdown(f"#### ◀️ 이전 주 실적 ({prev_week_start.strftime('%m/%d')} ~ {prev_week_end.strftime('%m/%d')})")
         if prev_week_tasks:
             for t in prev_week_tasks:
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
@@ -266,10 +273,10 @@ def meeting_report_modal():
                         icon = "✅" if sub.get("done") else "⏳"
                         st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} {f'(메모: {sub.get("memo")})' if sub.get('memo') else ''}")
         else:
-            st.info("지난주에 진행된 업무가 없습니다.")
+            st.info("해당 주간에 진행된 업무가 없습니다.")
 
         st.markdown("---")
-        st.markdown(f"#### ▶️ 이번주 추진실적 및 계획 ({curr_week_start.strftime('%m/%d')} ~ {curr_week_end.strftime('%m/%d')})")
+        st.markdown(f"#### ▶️ 선택한 주간 추진실적 및 계획 ({curr_week_start.strftime('%m/%d')} ~ {curr_week_end.strftime('%m/%d')})")
         if curr_week_tasks:
             for t in curr_week_tasks:
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
@@ -278,7 +285,7 @@ def meeting_report_modal():
                         icon = "✅" if sub.get("done") else "⏳"
                         st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} {f'(메모: {sub.get("memo")})' if sub.get('memo') else ''}")
         else:
-            st.info("이번주에 예정된 업무가 없습니다.")
+            st.info("해당 주간에 예정된 업무가 없습니다.")
 
     with tab_m:
         st.markdown(f"#### ◀️ 지난달 실적 ({prev_month_start.strftime('%Y년 %m월')})")
@@ -286,15 +293,15 @@ def meeting_report_modal():
             for t in prev_month_tasks:
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']}, 기간: {t.get('start_date')} ~ {t.get('due_date')})")
         else:
-            st.info("지난달에 진행된 업무가 없습니다.")
+            st.info("해당 월에 진행된 업무가 없습니다.")
 
         st.markdown("---")
-        st.markdown(f"#### ▶️ 이번달 추진실적 및 계획 ({curr_month_start.strftime('%Y년 %m월')})")
+        st.markdown(f"#### ▶️ 선택한 달 추진실적 및 계획 ({curr_month_start.strftime('%Y년 %m월')})")
         if curr_month_tasks:
             for t in curr_month_tasks:
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']}, 기간: {t.get('start_date')} ~ {t.get('due_date')})")
         else:
-            st.info("이번달에 예정된 업무가 없습니다.")
+            st.info("해당 월에 예정된 업무가 없습니다.")
 
     st.markdown("---")
     if st.button("닫기", use_container_width=True):
@@ -702,7 +709,7 @@ with tab1:
         status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
         def render_task_cards(target_statuses, tab_prefix):
-            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category") == selected_cat]
+            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category"] == selected_cat]
             res = [t for t in res if t["status"] in target_statuses]
 
             filtered_by_period = []
