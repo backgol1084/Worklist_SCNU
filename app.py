@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime, date, timedelta
@@ -87,7 +86,7 @@ def delete_task_db(task_id):
 def _clear_widget_keys(task_id):
     keys_to_del = [k for k in st.session_state.keys() if f"_{task_id}_" in k]
     for k in keys_to_del:
-        if k != "editing_task_id" and k != "show_calendar_modal":
+        if k != "editing_task_id" and k != "show_calendar_modal" and k != "show_meeting_modal":
             try:
                 del st.session_state[k]
             except:
@@ -99,17 +98,17 @@ if "editing_task_id" not in st.session_state:
 if "show_calendar_modal" not in st.session_state:
     st.session_state.show_calendar_modal = False
 
+if "show_meeting_modal" not in st.session_state:
+    st.session_state.show_meeting_modal = False
+
 db_memo_content = load_memo_db()
 
-# --- 커스텀 CSS 및 자바스크립트 (마우스 크기 조절값 자동 기억) ---
+# --- 커스텀 CSS (마우스 크기 조절값 자동 기억) ---
 st.markdown("""
 <style>
-    /* 텍스트박스 크기 조절 활성화 */
     textarea {
         resize: vertical !important;
     }
-    
-    /* 새 업무 등록 세부 업무 리스트: 첫 오픈 시 현재 크기의 50% 수준(약 80px)으로 설정 및 조절 가능 */
     [data-testid="stSidebar"] [data-baseweb="textarea"] textarea {
         min-height: 50px !important;
         height: 80px !important;
@@ -118,19 +117,15 @@ st.markdown("""
 </style>
 
 <script>
-    // 브라우저 로컬 스토리지에서 메모장 크기 복원 및 감지 스크립트
     document.addEventListener("DOMContentLoaded", function() {
         setTimeout(function() {
             const textareas = document.querySelectorAll('[data-testid="stSidebar"] textarea');
-            // 두 번째 textarea가 해야할 일 메모장 영역임
             if (textareas.length >= 2) {
                 const memoBox = textareas[1];
                 const savedHeight = localStorage.getItem("hyo_memo_height");
                 if (savedHeight) {
                     memoBox.style.height = savedHeight + "px";
                 }
-                
-                // 마우스로 크기를 조절할 때마다 로컬 스토리지에 즉시 저장
                 const observer = new ResizeObserver(entries => {
                     for (let entry of entries) {
                         if (entry.target === memoBox) {
@@ -147,7 +142,7 @@ st.markdown("""
 
 CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
 
-# 4. 날짜 클릭 시 뜨는 모달 팝업 함수 정의
+# 4. 날짜별 업무 관리 팝업 함수
 @st.dialog("📅 날짜별 업무 관리 팝업", width="large")
 def date_task_modal(sel_date_str):
     sel_d = datetime.strptime(sel_date_str, "%Y-%m-%d").date()
@@ -208,12 +203,110 @@ def date_task_modal(sel_date_str):
             else:
                 st.warning("업무 제목을 입력해주세요.")
 
+# 5. 회의자료 레포팅 팝업 함수
+@st.dialog("📊 주간·월간 회의자료 추진실적 레포트", width="large")
+def meeting_report_modal():
+    st.markdown("### 📋 회의용 추진실적 자동 레포팅")
+    st.write("등록된 업무 및 세부 항목의 일정·완료 데이터를 바탕으로 주간 및 월간 실적을 집계합니다.")
+    st.markdown("---")
+
+    tasks = load_data()
+    today = date.today()
+
+    # 주간 계산 (월요일 시작 기준)
+    curr_week_start = today - timedelta(days=today.weekday())
+    curr_week_end = curr_week_start + timedelta(days=6)
+    prev_week_start = curr_week_start - timedelta(days=7)
+    prev_week_end = curr_week_start - timedelta(days=1)
+
+    # 월간 계산
+    curr_year, curr_month = today.year, today.month
+    curr_month_start = date(curr_year, curr_month, 1)
+    curr_month_last_day = calendar.monthrange(curr_year, curr_month)[1]
+    curr_month_end = date(curr_year, curr_month, curr_month_last_day)
+
+    if curr_month == 1:
+        prev_year, prev_month = curr_year - 1, 12
+    else:
+        prev_year, prev_month = curr_year, curr_month - 1
+    prev_month_start = date(prev_year, prev_month, 1)
+    prev_month_last_day = calendar.monthrange(prev_year, prev_month)[1]
+    prev_month_end = date(prev_year, prev_month, prev_month_last_day)
+
+    def filter_tasks_by_date(start_d, end_d):
+        matched = []
+        for t in tasks:
+            s_str = t.get("start_date")
+            d_str = t.get("due_date")
+            if s_str and d_str:
+                try:
+                    s_dt = datetime.strptime(s_str, "%Y-%m-%d").date()
+                    d_dt = datetime.strptime(d_str, "%Y-%m-%d").date()
+                    # 기간이 겹치는 경우 포함
+                    if not (d_dt < start_d or s_dt > end_d):
+                        matched.append(t)
+                except:
+                    pass
+        return matched
+
+    prev_week_tasks = filter_tasks_by_date(prev_week_start, prev_week_end)
+    curr_week_tasks = filter_tasks_by_date(curr_week_start, curr_week_end)
+    prev_month_tasks = filter_tasks_by_date(prev_month_start, prev_month_end)
+    curr_month_tasks = filter_tasks_by_date(curr_month_start, curr_month_end)
+
+    tab_w, tab_m = st.tabs(["📅 주간 추진실적", "📆 월간 추진실적"])
+
+    with tab_w:
+        st.markdown(f"#### ◀️ 지난주 실적 ({prev_week_start.strftime('%m/%d')} ~ {prev_week_end.strftime('%m/%d')})")
+        if prev_week_tasks:
+            for t in prev_week_tasks:
+                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
+                for sub in t.get("subtasks", []):
+                    if isinstance(sub, dict):
+                        icon = "✅" if sub.get("done") else "⏳"
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} {f'(메모: {sub.get("memo")})' if sub.get('memo') else ''}")
+        else:
+            st.info("지난주에 진행된 업무가 없습니다.")
+
+        st.markdown("---")
+        st.markdown(f"#### ▶️ 이번주 추진실적 및 계획 ({curr_week_start.strftime('%m/%d')} ~ {curr_week_end.strftime('%m/%d')})")
+        if curr_week_tasks:
+            for t in curr_week_tasks:
+                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
+                for sub in t.get("subtasks", []):
+                    if isinstance(sub, dict):
+                        icon = "✅" if sub.get("done") else "⏳"
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} {f'(메모: {sub.get("memo")})' if sub.get('memo') else ''}")
+        else:
+            st.info("이번주에 예정된 업무가 없습니다.")
+
+    with tab_m:
+        st.markdown(f"#### ◀️ 지난달 실적 ({prev_month_start.strftime('%Y년 %m월')})")
+        if prev_month_tasks:
+            for t in prev_month_tasks:
+                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']}, 기간: {t.get('start_date')} ~ {t.get('due_date')})")
+        else:
+            st.info("지난달에 진행된 업무가 없습니다.")
+
+        st.markdown("---")
+        st.markdown(f"#### ▶️ 이번달 추진실적 및 계획 ({curr_month_start.strftime('%Y년 %m월')})")
+        if curr_month_tasks:
+            for t in curr_month_tasks:
+                st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']}, 기간: {t.get('start_date')} ~ {t.get('due_date')})")
+        else:
+            st.info("이번달에 예정된 업무가 없습니다.")
+
+    st.markdown("---")
+    if st.button("닫기", use_container_width=True):
+        st.session_state.show_meeting_modal = False
+        st.rerun()
+
 # --- 앱 UI 레이아웃 시작 ---
 st.title("✅ HYO's 업무 진행 관리")
 st.caption("나만의 간편한 업무 리스트 & 실시간 클라우드 DB 트래커")
 st.markdown("---")
 
-# 사이드바: 새 업무 등록, 캘린더 버튼, 그리고 메모장
+# 사이드바: 새 업무 등록, 캘린더 버튼, 메모장, 회의자료 버튼
 with st.sidebar:
     st.header("➕ 새 업무 등록")
     with st.form("add_task_form", clear_on_submit=True):
@@ -249,7 +342,7 @@ with st.sidebar:
         st.session_state.show_calendar_modal = not st.session_state.show_calendar_modal
         st.rerun()
 
-    # --- 해야할 일 메모장 영역 (마우스 조절 크기 기억) ---
+    # --- 해야할 일 메모장 영역 ---
     st.markdown("---")
     st.subheader("📝 해야 할 일 메모장")
     
@@ -260,11 +353,21 @@ with st.sidebar:
             save_memo_db(memo_input)
             st.success("메모가 저장되었습니다!")
 
+    # --- 회의자료 버튼 추가 ---
+    st.markdown("---")
+    if st.button("📊 회의자료 (추진실적 레포트)", use_container_width=True):
+        st.session_state.show_meeting_modal = True
+        st.rerun()
+
 # 데이터 불러오기
 with st.spinner("데이터를 불러오는 중입니다..."):
     tasks = load_data()
 
-# 5. 인터랙티브 캘린더 뷰 영역
+# 6. 회의자료 모달 자동 실행 처리
+if st.session_state.show_meeting_modal:
+    meeting_report_modal()
+
+# 7. 인터랙티브 캘린더 뷰 영역
 if st.session_state.show_calendar_modal:
     st.markdown("""
     <div style="padding: 20px; border-radius: 10px; border: 2px solid #2196F3; background-color: #e3f2fd; margin-bottom: 20px;">
@@ -408,7 +511,7 @@ if st.session_state.show_calendar_modal:
 
     st.markdown("---")
 
-# 6. 메인 화면: 탭 구성
+# 8. 메인 화면: 탭 구성
 tab1, tab2 = st.tabs(["📋 업무 진행 & 관리", "📊 한눈에 보기 & 엑셀 다운로드"])
 
 with tab1:
