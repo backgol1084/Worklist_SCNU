@@ -203,13 +203,12 @@ def date_task_modal(sel_date_str):
             else:
                 st.warning("업무 제목을 입력해주세요.")
 
-# 5. 회의자료 레포팅 팝업 함수 (날짜 선택 기능 추가)
+# 5. 회의자료 레포팅 팝업 함수 (날짜 선택 기능 포함)
 @st.dialog("📊 주간·월간 회의자료 추진실적 레포트", width="large")
 def meeting_report_modal():
     st.markdown("### 📋 회의용 추진실적 자동 레포팅")
     st.write("기준이 될 연도와 월, 또는 특정 주간의 기준일을 선택하여 과거 및 현재의 추진 실적을 조회하세요.")
     
-    # 날짜 선택 컨트롤 영역
     col_r1, col_r2 = st.columns(2)
     with col_r1:
         report_base_date = st.date_input("조회 기준 날짜 선택 (해당 주 및 해당 월 자동 계산)", value=date.today(), key="report_base_date_input")
@@ -221,13 +220,11 @@ def meeting_report_modal():
     tasks = load_data()
     base_date = report_base_date
 
-    # 선택된 기준 날짜 기준 주간 계산 (월요일 시작 기준)
     curr_week_start = base_date - timedelta(days=base_date.weekday())
     curr_week_end = curr_week_start + timedelta(days=6)
     prev_week_start = curr_week_start - timedelta(days=7)
     prev_week_end = curr_week_start - timedelta(days=1)
 
-    # 선택된 기준 날짜 기준 월간 계산
     curr_year, curr_month = base_date.year, base_date.month
     curr_month_start = date(curr_year, curr_month, 1)
     curr_month_last_day = calendar.monthrange(curr_year, curr_month)[1]
@@ -709,7 +706,7 @@ with tab1:
         status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
         def render_task_cards(target_statuses, tab_prefix):
-            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category"] == selected_cat]
+            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category") == selected_cat]
             res = [t for t in res if t["status"] in target_statuses]
 
             filtered_by_period = []
