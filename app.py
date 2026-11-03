@@ -79,6 +79,23 @@ def update_task_db(task_id, subtasks, status, start_date=None, due_date=None, en
 
     supabase.table("tasks").update(update_data).eq("id", task_id).execute()
 
+def _update_and_save(task_id, subtasks):
+    """세부 업무 변경 시 상태 자동 계산 및 DB 반영을 위한 헬퍼 함수"""
+    total_sub = len(subtasks)
+    done_sub = sum(1 for s in subtasks if isinstance(s, dict) and s.get("done"))
+    
+    if total_sub > 0:
+        if done_sub == total_sub:
+            new_status = "완료"
+        elif done_sub > 0:
+            new_status = "진행중"
+        else:
+            new_status = "대기"
+    else:
+        new_status = "대기"
+        
+    update_task_db(task_id, subtasks, new_status)
+
 def delete_task_db(task_id):
     """업무 삭제"""
     supabase.table("tasks").delete().eq("id", task_id).execute()
@@ -221,7 +238,6 @@ def meeting_report_modal():
     tasks = load_data()
     base_date = report_base_date
 
-    # 라디오 버튼 필터 적용
     if report_cat_filter != "전체":
         tasks = [t for t in tasks if t.get("category") == report_cat_filter]
 
