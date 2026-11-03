@@ -140,7 +140,8 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-CATEGORY_OPTIONS = ["융합", "전공", "기초", "가치", "기타"]
+# 요청하신 순서 (가치, 기초, 융합, 전공, 산학, 기타)
+CATEGORY_OPTIONS = ["가치", "기초", "융합", "전공", "산학", "기타"]
 
 # 4. 날짜별 업무 관리 팝업 함수
 @st.dialog("📅 날짜별 업무 관리 팝업", width="large")
@@ -203,22 +204,26 @@ def date_task_modal(sel_date_str):
             else:
                 st.warning("업무 제목을 입력해주세요.")
 
-# 5. 회의자료 레포팅 팝업 함수 (날짜 선택 기능 포함)
+# 5. 회의자료 레포팅 팝업 함수 (기타 포함)
 @st.dialog("📊 주간·월간 회의자료 추진실적 레포트", width="large")
 def meeting_report_modal():
     st.markdown("### 📋 회의용 추진실적 자동 레포팅")
-    st.write("기준이 될 연도와 월, 또는 특정 주간의 기준일을 선택하여 과거 및 현재의 추진 실적을 조회하세요.")
+    st.write("조회할 기준 날짜와 업무구분을 선택하여 과거 및 현재의 추진 실적을 확인하세요.")
     
     col_r1, col_r2 = st.columns(2)
     with col_r1:
-        report_base_date = st.date_input("조회 기준 날짜 선택 (해당 주 및 해당 월 자동 계산)", value=date.today(), key="report_base_date_input")
+        report_base_date = st.date_input("조회 기준 날짜 선택", value=date.today(), key="report_base_date_input")
     with col_r2:
-        st.info("💡 선택한 날짜가 속한 '주(週)' 및 '월(月)'을 기준으로 지난 실적과 이번 실적이 자동 비교됩니다.")
+        report_cat_filter = st.radio("업무구분 필터", ["전체"] + CATEGORY_OPTIONS, horizontal=True, key="report_cat_radio")
 
     st.markdown("---")
 
     tasks = load_data()
     base_date = report_base_date
+
+    # 라디오 버튼 필터 적용
+    if report_cat_filter != "전체":
+        tasks = [t for t in tasks if t.get("category") == report_cat_filter]
 
     curr_week_start = base_date - timedelta(days=base_date.weekday())
     curr_week_end = curr_week_start + timedelta(days=6)
@@ -383,10 +388,11 @@ if st.session_state.show_calendar_modal:
     cal_view_mode = st.radio("캘린더 보기 단위 선택", ["연간 캘린더", "월간 캘린더", "주간 캘린더", "일간 캘린더"], index=1, horizontal=True)
 
     color_map = {
-        "융합": "#e3f2fd", 
-        "전공": "#e8f5e9", 
-        "기초": "#fff3e0", 
         "가치": "#fce4ec", 
+        "기초": "#fff3e0", 
+        "융합": "#e3f2fd", 
+        "전공": "#e8f5e9",
+        "산학": "#e0f7fa",
         "기타": "#f3e5f5"
     }
 
