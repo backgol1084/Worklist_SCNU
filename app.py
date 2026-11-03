@@ -299,7 +299,8 @@ def meeting_report_modal():
                 for sub in t.get("subtasks", []):
                     if isinstance(sub, dict):
                         icon = "✅" if sub.get("done") else "⏳"
-                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {f'메모: {sub.get(\"memo\")}' if sub.get('memo') else ''}")
+                        memo_text = f"메모: {sub.get('memo')}" if sub.get('memo') else ""
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {memo_text}")
         else:
             st.info("해당 주간에 진행된 세부 업무가 없습니다.")
 
@@ -311,7 +312,8 @@ def meeting_report_modal():
                 for sub in t.get("subtasks", []):
                     if isinstance(sub, dict):
                         icon = "✅" if sub.get("done") else "⏳"
-                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {f'메모: {sub.get(\"memo\")}' if sub.get('memo') else ''}")
+                        memo_text = f"메모: {sub.get('memo')}" if sub.get('memo') else ""
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {memo_text}")
         else:
             st.info("해당 주간에 예정된 세부 업무가 없습니다.")
 
