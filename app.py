@@ -240,7 +240,7 @@ def meeting_report_modal():
     base_date = report_base_date
 
     if report_cat_filter != "전체":
-        tasks = [t for t in tasks if t.get("category") == report_cat_filter]
+        tasks = [t for t in tasks if t.get("category"] == report_cat_filter]
 
     curr_week_start = base_date - timedelta(days=base_date.weekday())
     curr_week_end = curr_week_start + timedelta(days=6)
@@ -260,11 +260,14 @@ def meeting_report_modal():
     prev_month_last_day = calendar.monthrange(prev_year, prev_month)[1]
     prev_month_end = date(prev_year, prev_month, prev_month_last_day)
 
-    def filter_tasks_by_subtask_date(start_d, end_d):
-        matched_tasks_dict = {}
+    def get_period_subtask_report(start_d, end_d):
+        """특정 기간(start_d ~ end_d)에 세부 일정 또는 기간이 겹치는 업무 및 세부 항목 추출"""
+        report_results = []
         for t in tasks:
             default_start = t.get("start_date")
             default_end = t.get("due_date")
+            matched_subs = []
+            
             for sub in t.get("subtasks", []):
                 if isinstance(sub, dict):
                     s_date = sub.get("start_date") or default_start
@@ -277,61 +280,81 @@ def meeting_report_modal():
                     try:
                         s_dt = datetime.strptime(s_date, "%Y-%m-%d").date()
                         e_dt = datetime.strptime(e_date, "%Y-%m-%d").date()
+                        # 기간이 겹치는지 확인
                         if not (e_dt < start_d or s_dt > end_d):
-                            if t["id"] not in matched_tasks_dict:
-                                matched_tasks_dict[t["id"]] = t
+                            matched_subs.append(sub)
                     except:
                         pass
-        return list(matched_tasks_dict.values())
+            
+            if matched_subs:
+                report_results.append({
+                    "task": t,
+                    "matched_subs": matched_subs
+                })
+        return report_results
 
-    prev_week_tasks = filter_tasks_by_subtask_date(prev_week_start, prev_week_end)
-    curr_week_tasks = filter_tasks_by_subtask_date(curr_week_start, curr_week_end)
-    prev_month_tasks = filter_tasks_by_subtask_date(prev_month_start, prev_month_end)
-    curr_month_tasks = filter_tasks_by_subtask_date(curr_month_start, curr_month_end)
+    prev_week_reports = get_period_subtask_report(prev_week_start, prev_week_end)
+    curr_week_reports = get_period_subtask_report(curr_week_start, curr_week_end)
+    prev_month_reports = get_period_subtask_report(prev_month_start, prev_month_end)
+    curr_month_reports = get_period_subtask_report(curr_month_start, curr_month_end)
 
     tab_w, tab_m = st.tabs(["📅 주간 추진실적", "📆 월간 추진실적"])
 
     with tab_w:
-        st.markdown(f"#### ◀️ 이전 주 실적 ({prev_week_start.strftime('%m/%d')} ~ {prev_week_end.strftime('%m/%d')})")
-        if prev_week_tasks:
-            for t in prev_week_tasks:
+        st.markdown(f"#### ◀️ 저번 주 실적 ({prev_week_start.strftime('%m/%d')} ~ {prev_week_end.strftime('%m/%d')})[cite: 5]")
+        if prev_week_reports:
+            for item in prev_week_reports:
+                t = item["task"]
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
-                for sub in t.get("subtasks", []):
+                for sub in item["matched_subs"]:
                     if isinstance(sub, dict):
                         icon = "✅" if sub.get("done") else "⏳"
                         memo_text = f"메모: {sub.get('memo')}" if sub.get('memo') else ""
                         st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {memo_text}")
         else:
-            st.info("해당 주간에 진행된 세부 업무가 없습니다.")
+            st.info("저번 주간에 진행된 세부 업무가 없습니다[cite: 5].")
 
         st.markdown("---")
-        st.markdown(f"#### ▶️ 선택한 주간 추진실적 및 계획 ({curr_week_start.strftime('%m/%d')} ~ {curr_week_end.strftime('%m/%d')})")
-        if curr_week_tasks:
-            for t in curr_week_tasks:
+        st.markdown(f"#### ▶️ 이번 주 추진실적 및 계획 ({curr_week_start.strftime('%m/%d')} ~ {curr_week_end.strftime('%m/%d')})")
+        if curr_week_reports:
+            for item in curr_week_reports:
+                t = item["task"]
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
-                for sub in t.get("subtasks", []):
+                for sub in item["matched_subs"]:
                     if isinstance(sub, dict):
                         icon = "✅" if sub.get("done") else "⏳"
                         memo_text = f"메모: {sub.get('memo')}" if sub.get('memo') else ""
                         st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {memo_text}")
         else:
-            st.info("해당 주간에 예정된 세부 업무가 없습니다.")
+            st.info("이번 주간에 예정된 세부 업무가 없습니다.")
 
     with tab_m:
         st.markdown(f"#### ◀️ 지난달 실적 ({prev_month_start.strftime('%Y년 %m월')})")
-        if prev_month_tasks:
-            for t in prev_month_tasks:
+        if prev_month_reports:
+            for item in prev_month_reports:
+                t = item["task"]
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
+                for sub in item["matched_subs"]:
+                    if isinstance(sub, dict):
+                        icon = "✅" if sub.get("done") else "⏳"
+                        memo_text = f"메모: {sub.get('memo')}" if sub.get('memo') else ""
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {memo_text}")
         else:
-            st.info("해당 월에 진행된 세부 업무가 없습니다.")
+            st.info("지난달에 진행된 세부 업무가 없습니다.")
 
         st.markdown("---")
-        st.markdown(f"#### ▶️ 선택한 달 추진실적 및 계획 ({curr_month_start.strftime('%Y년 %m월')})")
-        if curr_month_tasks:
-            for t in curr_month_tasks:
+        st.markdown(f"#### ▶️ 이번 달 추진실적 및 계획 ({curr_month_start.strftime('%Y년 %m월')})")
+        if curr_month_reports:
+            for item in curr_month_reports:
+                t = item["task"]
                 st.markdown(f"- **[{t['category']}] {t['title']}** (상태: {t['status']})")
+                for sub in item["matched_subs"]:
+                    if isinstance(sub, dict):
+                        icon = "✅" if sub.get("done") else "⏳"
+                        memo_text = f"메모: {sub.get('memo')}" if sub.get('memo') else ""
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{icon} {sub.get('name')} (일정: {sub.get('start_date')} ~ {sub.get('end_date')}) {memo_text}")
         else:
-            st.info("해당 월에 예정된 세부 업무가 없습니다.")
+            st.info("이번 달에 예정된 세부 업무가 없습니다.")
 
     st.markdown("---")
     if st.button("닫기", use_container_width=True):
@@ -715,7 +738,7 @@ with tab1:
         status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
         def render_task_cards(target_statuses, tab_prefix):
-            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category") == selected_cat]
+            res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category"] == selected_cat]
             res = [t for t in res if t["status"] in target_statuses]
 
             filtered_by_period = []
