@@ -97,6 +97,10 @@ def update_task_db(task_id, subtasks, status, start_date=None, due_date=None, en
 
     supabase.table("tasks").update(update_data).eq("id", task_id).execute()
 
+def update_performance_db(perf_id, update_data):
+    """실적 정보 업데이트"""
+    supabase.table("performances").update(update_data).eq("id", perf_id).execute()
+
 def _update_and_save(task_id, subtasks):
     """세부 업무 변경 시 상태 자동 계산 및 DB 반영을 위한 헬퍼 함수"""
     total_sub = len(subtasks)
@@ -133,6 +137,9 @@ def _clear_widget_keys(task_id):
 
 if "editing_task_id" not in st.session_state:
     st.session_state.editing_task_id = None
+
+if "editing_perf_id" not in st.session_state:
+    st.session_state.editing_perf_id = None
 
 if "show_calendar_modal" not in st.session_state:
     st.session_state.show_calendar_modal = False
@@ -1001,7 +1008,7 @@ if app_mode == "📋 업무 진행 관리":
 # ==========================================
 elif app_mode == "📊 실적 관리 & 레포트":
     st.title("📊 실적 관리 & 레포트")
-    st.caption("구분별 실적 등록, 최대 5개의 증빙 파일 및 메모 관리, 그리고 기간별 조회 레포트")
+    st.caption("구분별 실적 등록, 최대 5개의 증빙 파일 및 메모 관리, 그리고 기간별 조회 및 수정 레포트")
     st.markdown("---")
 
     perf_tab1, perf_tab2 = st.tabs(["📝 실적 등록", "📈 실적 레포트 및 조회"])
@@ -1092,17 +1099,22 @@ elif app_mode == "📊 실적 관리 & 레포트":
                     st.warning("실적 제목을 입력해주세요.")
 
     with perf_tab2:
-        st.subheader("📈 실적 조회 및 레포트")
+        st.subheader("📈 실적 조회 및 수정 레포트")
         performances = load_performances()
 
         if not performances:
             st.info("등록된 실적이 없습니다. '실적 등록' 탭에서 실적을 추가해 보세요.")
         else:
+            # 조회 기간 옵션 생성 (전체 기간, 2018~2026 연도별 옵션, 이번 달 실적)
+            current_yr = date.today().year
+            year_options = [f"{y}년 실적" for y in range(current_yr - 8, current_yr + 1)]
+            period_options = ["전체 기간"] + year_options + ["이번 달 실적"]
+
             r_col1, r_col2 = st.columns(2)
             with r_col1:
                 rep_cat = st.selectbox("📂 업무 구분 필터", ["전체"] + CATEGORY_OPTIONS, key="rep_cat_filter")
             with r_col2:
-                rep_period = st.selectbox("📅 조회 기간 옵션", ["전체 기간", "올해 실적", "이번 달 실적"], key="rep_period_filter")
+                rep_period = st.selectbox("📅 조회 기간 옵션", period_options, key="rep_period_filter")
 
             filtered_perfs = []
             today_date = date.today()
@@ -1121,14 +1133,15 @@ elif app_mode == "📊 실적 관리 & 레포트":
                         s_dt = datetime.strptime(s_str, "%Y-%m-%d").date()
                         e_dt = datetime.strptime(e_str, "%Y-%m-%d").date()
                         
-                        if rep_period == "올해 실적":
-                            if s_dt.year <= today_date.year <= e_dt.year:
-                                filtered_perfs.append(p)
-                        elif rep_period == "이번 달 실적":
+                        if rep_period == "이번 달 실적":
                             m_start = date(today_date.year, today_date.month, 1)
                             m_last_day = calendar.monthrange(today_date.year, today_date.month)[1]
                             m_end = date(today_date.year, today_date.month, m_last_day)
                             if not (e_dt < m_start or s_dt > m_end):
+                                filtered_perfs.append(p)
+                        elif "년 실적" in rep_period:
+                            target_y = int(rep_period.replace("년 실적", ""))
+                            if s_dt.year <= target_y <= e_dt.year:
                                 filtered_perfs.append(p)
                     except:
                         pass
@@ -1141,31 +1154,125 @@ elif app_mode == "📊 실적 관리 & 레포트":
             else:
                 for perf in filtered_perfs:
                     perf_id = perf["id"]
-                    with st.expander(f"[{perf['category']}] {perf['title']} ({perf['start_date']} ~ {perf['end_date']})"):
-                        st.markdown(f"**📝 실적 내용:**\n\n{perf.get('content', '내용 없음')}")
-                        st.markdown("---")
-                        st.markdown("**📁 증빙 파일 및 개별 메모 목록:**")
-                        
-                        atts = perf.get("attachments", [])
-                        has_file = False
-                        for idx, att in enumerate(atts):
-                            if isinstance(att, dict) and (att.get("file_name") or att.get("memo")):
-                                has_file = True
-                                f_name = att.get("file_name", "파일 없음")
-                                f_url = att.get("file_url")
-                                f_memo = att.get("memo", "메모 없음")
-                                
-                                st.markdown(f"- **증빙 {idx+1}:** {f_name}")
-                                st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;💬 **메모:** {f_memo}")
-                                if f_url:
-                                    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;📥 **다운로드 링크:** [파일 다운로드하기]({f_url})")
-                                else:
-                                    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;⚠️ 업로드된 파일이 없거나 링크를 불러올 수 없습니다.")
-                        if not has_file:
-                            st.caption("등록된 증빙 자료가 없습니다.")
+                    is_editing = (st.session_state.get("editing_perf_id") == perf_id)
 
-                        st.markdown("")
-                        if st.button("🗑️ 이 실적 삭제", key=f"del_perf_{perf_id}", use_container_width=True):
-                            delete_performance_db(perf_id)
-                            st.success("실적이 삭제되었습니다!")
-                            st.rerun()
+                    with st.expander(f"[{perf['category']}] {perf['title']} ({perf['start_date']} ~ {perf['end_date']})"):
+                        if not is_editing:
+                            st.markdown(f"**📝 실적 내용:**\n\n{perf.get('content', '내용 없음')}")
+                            st.markdown("---")
+                            st.markdown("**📁 증빙 파일 및 개별 메모 목록:**")
+                            
+                            atts = perf.get("attachments", [])
+                            has_file = False
+                            for idx, att in enumerate(atts):
+                                if isinstance(att, dict) and (att.get("file_name") or att.get("memo")):
+                                    has_file = True
+                                    f_name = att.get("file_name", "파일 없음")
+                                    f_url = att.get("file_url")
+                                    f_memo = att.get("memo", "메모 없음")
+                                    
+                                    st.markdown(f"- **증빙 {idx+1}:** {f_name}")
+                                    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;💬 **메모:** {f_memo}")
+                                    if f_url:
+                                        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;📥 **다운로드 링크:** [파일 다운로드하기]({f_url})")
+                                    else:
+                                        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;⚠️ 업로드된 파일이 없거나 링크를 불러올 수 없습니다.")
+                            if not has_file:
+                                st.caption("등록된 증빙 자료가 없습니다.")
+
+                            st.markdown("")
+                            col_eb1, col_eb2 = st.columns(2)
+                            with col_eb1:
+                                if st.button("✏️ 이 실적 수정하기", key=f"edit_perf_btn_{perf_id}", use_container_width=True):
+                                    st.session_state.editing_perf_id = perf_id
+                                    st.rerun()
+                            with col_eb2:
+                                if st.button("🗑️ 이 실적 삭제", key=f"del_perf_{perf_id}", use_container_width=True):
+                                    delete_performance_db(perf_id)
+                                    st.success("실적이 삭제되었습니다!")
+                                    st.rerun()
+                        else:
+                            st.markdown("### ✏️ 실적 수정 모드")
+                            with st.form(key=f"edit_perf_form_{perf_id}"):
+                                ed_cat = st.selectbox("업무 구분", CATEGORY_OPTIONS, index=CATEGORY_OPTIONS.index(perf["category"]) if perf["category"] in CATEGORY_OPTIONS else 0, key=f"ed_cat_{perf_id}")
+                                ed_title = st.text_input("실적 제목", value=perf["title"], key=f"ed_title_{perf_id}")
+                                
+                                ed_col1, ed_col2 = st.columns(2)
+                                with ed_col1:
+                                    cur_s = datetime.strptime(perf["start_date"], "%Y-%m-%d").date() if perf.get("start_date") else date.today()
+                                    ed_start = st.date_input("시작 년월일", value=cur_s, key=f"ed_start_{perf_id}")
+                                with ed_col2:
+                                    cur_e = datetime.strptime(perf["end_date"], "%Y-%m-%d").date() if perf.get("end_date") else date.today()
+                                    ed_end = st.date_input("종료 년월일", value=cur_e, key=f"ed_end_{perf_id}")
+
+                                ed_content = st.text_area("실적 내용 상세", value=perf.get("content", ""), key=f"ed_content_{perf_id}")
+
+                                st.markdown("---")
+                                st.markdown("#### 📁 증빙 자료 확인 및 개별 메모 수정")
+                                existing_atts = perf.get("attachments", [])
+                                updated_atts = []
+
+                                for i in range(1, 6):
+                                    st.markdown(f"**[증빙 자료 {i}]**")
+                                    prev_att = existing_atts[i-1] if (i-1) < len(existing_atts) and isinstance(existing_atts[i-1], dict) else {}
+                                    prev_name = prev_att.get("file_name")
+                                    prev_url = prev_att.get("file_url")
+                                    prev_memo = prev_att.get("memo", "")
+
+                                    if prev_name:
+                                        st.caption(f"📌 기존 첨부 파일: {prev_name}")
+
+                                    ef_col1, ef_col2 = st.columns([1, 1])
+                                    with ef_col1:
+                                        new_uploaded_file = st.file_uploader(f"새 파일 선택 {i} (변경 시)", key=f"ed_file_{perf_id}_{i}")
+                                    with ef_col2:
+                                        new_file_memo = st.text_input(f"파일 {i} 메모 수정", value=prev_memo, key=f"ed_memo_{perf_id}_{i}")
+                                    
+                                    final_file_name = prev_name
+                                    final_file_url = prev_url
+
+                                    if new_uploaded_file is not None:
+                                        final_file_name = new_uploaded_file.name
+                                        file_ext = final_file_name.split(".")[-1] if "." in final_file_name else ""
+                                        unique_file_name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}_{uuid.uuid4().hex[:8]}.{file_ext}"
+                                        try:
+                                            file_bytes = new_uploaded_file.getvalue()
+                                            supabase.storage.from_("attachments").upload(
+                                                path=unique_file_name,
+                                                file=file_bytes,
+                                                file_options={"content-type": new_uploaded_file.type}
+                                            )
+                                            final_file_url = supabase.storage.from_("attachments").get_public_url(unique_file_name)
+                                        except Exception as upload_err:
+                                            st.warning(f"파일 {i} 업로드 중 오류 발생: {upload_err}")
+
+                                    updated_atts.append({
+                                        "file_name": final_file_name,
+                                        "file_url": final_file_url,
+                                        "memo": new_file_memo
+                                    })
+                                    st.markdown("")
+
+                                submit_update = st.form_submit_button("💾 수정 사항 저장하기", use_container_width=True)
+                                cancel_update = st.form_submit_button("❌ 취소", use_container_width=True)
+
+                                if submit_update:
+                                    if ed_title.strip():
+                                        update_payload = {
+                                            "category": ed_cat,
+                                            "title": ed_title.strip(),
+                                            "start_date": str(ed_start),
+                                            "end_date": str(ed_end),
+                                            "content": ed_content,
+                                            "attachments": json.dumps(updated_atts, ensure_ascii=False)
+                                        }
+                                        update_performance_db(perf_id, update_payload)
+                                        st.session_state.editing_perf_id = None
+                                        st.success("실적이 성공적으로 수정되었습니다!")
+                                        st.rerun()
+                                    else:
+                                        st.warning("실적 제목을 입력해주세요.")
+
+                                if cancel_update:
+                                    st.session_state.editing_perf_id = None
+                                    st.rerun()
