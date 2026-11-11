@@ -1105,16 +1105,17 @@ elif app_mode == "📊 실적 관리 & 레포트":
         if not performances:
             st.info("등록된 실적이 없습니다. '실적 등록' 탭에서 실적을 추가해 보세요.")
         else:
-            # 조회 기간 옵션 생성 (전체 기간, 2018~2026 연도별 옵션, 이번 달 실적)
+            # 조회 기간 옵션 생성 (전체 기간, 2026~2018 내림차순 연도별 옵션, 이번 달 실적)
             current_yr = date.today().year
-            year_options = [f"{y}년 실적" for y in range(current_yr - 8, current_yr + 1)]
+            year_options = [f"{y}년 실적" for y in range(current_yr, current_yr - 9, -1)]
             period_options = ["전체 기간"] + year_options + ["이번 달 실적"]
 
             r_col1, r_col2 = st.columns(2)
             with r_col1:
                 rep_cat = st.selectbox("📂 업무 구분 필터", ["전체"] + CATEGORY_OPTIONS, key="rep_cat_filter")
             with r_col2:
-                rep_period = st.selectbox("📅 조회 기간 옵션", period_options, key="rep_period_filter")
+                # 기본값으로 올해 년도(예: "2026년 실적")가 선택되도록 index 설정 (전체 기간 다음이 올해이므로 index=1)
+                rep_period = st.selectbox("📅 조회 기간 옵션", period_options, index=1, key="rep_period_filter")
 
             filtered_perfs = []
             today_date = date.today()
