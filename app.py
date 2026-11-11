@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 import calendar
 import openpyxl
 from io import BytesIO
+import json
 
 # 1. 페이지 기본 설정 (가장 처음에 위치해야 함)
 st.set_page_config(
@@ -36,7 +37,16 @@ def load_performances():
     """DB에서 전체 실적 리스트 불러오기"""
     try:
         response = supabase.table("performances").select("*").order("id", desc=False).execute()
-        return response.data
+        data = response.data
+        # DB에 저장된 attachments가 문자열 형태일 수 있으므로 안전하게 파싱
+        for item in data:
+            att = item.get("attachments")
+            if isinstance(att, str):
+                try:
+                    item["attachments"] = json.loads(att)
+                except:
+                    item["attachments"] = []
+        return data
     except Exception as e:
         return []
 
@@ -673,14 +683,14 @@ if app_mode == "📋 업무 진행 관리":
                         else:
                             st.warning("내용을 입력해주세요.")
 
-                st.write("")
-                if st.button("📌 편집 완료 (닫기)", use_container_width=True, type="primary"):
-                    _clear_widget_keys(task_id)
-                    st.session_state.editing_task_id = None
-                    st.rerun()
-                
-                st.markdown("---")
-                st.markdown("<br>", unsafe_allow_html=True)
+            st.write("")
+            if st.button("📌 편집 완료 (닫기)", use_container_width=True, type="primary"):
+                _clear_widget_keys(task_id)
+                st.session_state.editing_task_id = None
+                st.rerun()
+            
+            st.markdown("---")
+            st.markdown("<br>", unsafe_allow_html=True)
 
         if not tasks:
             st.info("등록된 업무가 없습니다. 왼쪽 사이드바에서 새 업무를 추가해보세요!")
@@ -1043,21 +1053,18 @@ elif app_mode == "📊 실적 관리 & 레포트":
                             
                             if f is not None:
                                 file_name = f.name
-                                file_ext = file_name.split(".")[-1]
                                 unique_file_name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{idx}_{file_name}"
                                 try:
-                                    # Supabase Storage에 업로드 (attachments 버킷 필요)
                                     file_bytes = f.getvalue()
                                     supabase.storage.from_("attachments").upload(
                                         path=unique_file_name,
                                         file=file_bytes,
                                         file_options={"content-type": f.type}
                                     )
-                                    # Public URL 가져오기
                                     res_url = supabase.storage.from_("attachments").get_public_url(unique_file_name)
                                     file_url = res_url
                                 except Exception as upload_err:
-                                    st.warning(f"파일 {idx+1} 업로드 중 오류 발생 (Storage 버킷 'attachments'를 확인하세요): {upload_err}")
+                                    st.warning(f"파일 {idx+1} 업로드 중 오류 발생: {upload_err}")
 
                             attachments_data.append({
                                 "file_name": file_name,
@@ -1071,7 +1078,7 @@ elif app_mode == "📊 실적 관리 & 레포트":
                             "start_date": str(p_start),
                             "end_date": str(p_end),
                             "content": p_content,
-                            "attachments": attachments_data
+                            "attachments": json.dumps(attachments_data, ensure_ascii=False)  # JSON 문자열로 변환하여 저장
                         }
                         supabase.table("performances").insert(new_perf_row).execute()
                     st.success("실적이 성공적으로 등록되었습니다!")
