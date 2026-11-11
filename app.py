@@ -245,7 +245,7 @@ def meeting_report_modal():
     base_date = report_base_date
 
     if report_cat_filter != "전체":
-        tasks = [t for t in tasks if t.get("category") == report_cat_filter]
+        tasks = [t for t in tasks if t.get("category"] == report_cat_filter]
 
     curr_week_start = base_date - timedelta(days=base_date.weekday())
     curr_week_end = curr_week_start + timedelta(days=6)
@@ -1105,7 +1105,6 @@ elif app_mode == "📊 실적 관리 & 레포트":
         if not performances:
             st.info("등록된 실적이 없습니다. '실적 등록' 탭에서 실적을 추가해 보세요.")
         else:
-            # 조회 기간 옵션 생성 (전체 기간, 2026~2018 내림차순 연도별 옵션, 이번 달 실적)
             current_yr = date.today().year
             year_options = [f"{y}년 실적" for y in range(current_yr, current_yr - 9, -1)]
             period_options = ["전체 기간"] + year_options + ["이번 달 실적"]
@@ -1114,7 +1113,6 @@ elif app_mode == "📊 실적 관리 & 레포트":
             with r_col1:
                 rep_cat = st.selectbox("📂 업무 구분 필터", ["전체"] + CATEGORY_OPTIONS, key="rep_cat_filter")
             with r_col2:
-                # 기본값으로 올해 년도(예: "2026년 실적")가 선택되도록 index 설정 (전체 기간 다음이 올해이므로 index=1)
                 rep_period = st.selectbox("📅 조회 기간 옵션", period_options, index=1, key="rep_period_filter")
 
             filtered_perfs = []
@@ -1194,8 +1192,18 @@ elif app_mode == "📊 실적 관리 & 레포트":
                                     st.rerun()
                         else:
                             st.markdown("### ✏️ 실적 수정 모드")
+                            
+                            if st.button("❌ 수정 취소", key=f"cancel_perf_top_{perf_id}"):
+                                st.session_state.editing_perf_id = None
+                                st.rerun()
+
                             with st.form(key=f"edit_perf_form_{perf_id}"):
-                                ed_cat = st.selectbox("업무 구분", CATEGORY_OPTIONS, index=CATEGORY_OPTIONS.index(perf["category"]) if perf["category"] in CATEGORY_OPTIONS else 0, key=f"ed_cat_{perf_id}")
+                                ed_cat = st.selectbox(
+                                    "업무 구분", 
+                                    CATEGORY_OPTIONS, 
+                                    index=CATEGORY_OPTIONS.index(perf["category"]) if perf["category"] in CATEGORY_OPTIONS else 0, 
+                                    key=f"ed_cat_{perf_id}"
+                                )
                                 ed_title = st.text_input("실적 제목", value=perf["title"], key=f"ed_title_{perf_id}")
                                 
                                 ed_col1, ed_col2 = st.columns(2)
@@ -1254,8 +1262,7 @@ elif app_mode == "📊 실적 관리 & 레포트":
                                     })
                                     st.markdown("")
 
-                                submit_update = st.form_submit_button("💾 수정 사항 저장하기", use_container_width=True)
-                                cancel_update = st.form_submit_button("❌ 취소", use_container_width=True)
+                                submit_update = st.form_submit_button("💾 수정 사항 저장하기", use_container_width=True, type="primary")
 
                                 if submit_update:
                                     if ed_title.strip():
@@ -1267,13 +1274,12 @@ elif app_mode == "📊 실적 관리 & 레포트":
                                             "content": ed_content,
                                             "attachments": json.dumps(updated_atts, ensure_ascii=False)
                                         }
-                                        update_performance_db(perf_id, update_payload)
-                                        st.session_state.editing_perf_id = None
-                                        st.success("실적이 성공적으로 수정되었습니다!")
-                                        st.rerun()
+                                        try:
+                                            update_performance_db(perf_id, update_payload)
+                                            st.session_state.editing_perf_id = None
+                                            st.success("실적이 성공적으로 수정되었습니다!")
+                                            st.rerun()
+                                        except Exception as save_err:
+                                            st.error(f"DB 업데이트 중 오류 발생: {save_err}")
                                     else:
                                         st.warning("실적 제목을 입력해주세요.")
-
-                                if cancel_update:
-                                    st.session_state.editing_perf_id = None
-                                    st.rerun()
