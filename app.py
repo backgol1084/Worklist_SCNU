@@ -729,7 +729,7 @@ if app_mode == "📋 업무 진행 관리":
             status_tab1, status_tab2, status_tab3 = st.tabs(["⏳ 대기 & 진행중", "✅ 완료", "📋 전체 보기"])
 
             def render_task_cards(target_statuses, tab_prefix):
-                res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category"] == selected_cat]
+                res = tasks if selected_cat == "전체" else [t for t in tasks if t.get("category") == selected_cat]
                 res = [t for t in res if t["status"] in target_statuses]
 
                 filtered_by_period = []
@@ -1082,14 +1082,12 @@ elif app_mode == "📊 실적 관리 & 레포트":
                             "attachments": json.dumps(attachments_data, ensure_ascii=False)
                         }
                         
-                        # 디버깅용: 전송 데이터 확인 및 에러 캐치
                         try:
                             supabase.table("performances").insert(new_perf_row).execute()
                             st.success("실적이 성공적으로 등록되었습니다!")
                             st.rerun()
                         except Exception as db_err:
                             st.error(f"데이터베이스 저장 중 상세 오류 발생: {db_err}")
-                            st.write("전송된 데이터 구조:", new_perf_row)
                 else:
                     st.warning("실적 제목을 입력해주세요.")
 
