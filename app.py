@@ -368,72 +368,6 @@ def meeting_report_modal():
 st.sidebar.title("📌 메뉴 네비게이션")
 app_mode = st.sidebar.radio("이동할 메뉴 선택", ["📋 업무 진행 관리", "📊 실적 관리 & 레포트"])
 
-# --- 사이드바 최하단: 데이터 임포트 / 익스포트 영역 ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔄 데이터 백업 및 복원")
-
-# 1. 데이터 익스포트 (다운로드)
-tasks_data_all = load_data()
-perfs_data_all = load_performances()
-memo_data_all = load_memo_db()
-
-backup_payload = {
-    "version": "1.0",
-    "export_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "tasks": tasks_data_all,
-    "performances": perfs_data_all,
-    "memo": memo_data_all
-}
-
-backup_json_str = json.dumps(backup_payload, ensure_ascii=False, indent=4)
-today_str = datetime.now().strftime("%Y%m%d")
-
-st.sidebar.download_button(
-    label="📤 데이터 백업 (JSON 다운로드)",
-    data=backup_json_str,
-    file_name=f"HYOs_backup_{today_str}.json",
-    mime="application/json",
-    use_container_width=True,
-    help="현재 등록된 모든 업무, 실적, 메모 데이터를 백업 파일로 저장합니다."
-)
-
-# 2. 데이터 임포트 (업로드 및 복원)
-uploaded_backup_file = st.sidebar.file_uploader("📥 데이터 복원 (JSON 업로드)", type=["json"], help="백업했던 JSON 파일을 업로드하여 데이터를 복원합니다.")
-
-if uploaded_backup_file is not None:
-    if st.sidebar.button("⚠️ 업로드된 데이터로 복원 실행", use_container_width=True, type="primary"):
-        try:
-            content = uploaded_backup_file.read().decode("utf-8")
-            backup_data = json.loads(content)
-            
-            imported_tasks = backup_data.get("tasks", [])
-            imported_perfs = backup_data.get("performances", [])
-            imported_memo = backup_data.get("memo", "")
-            
-            # Tasks 복원 (id 제외 후 upsert 또는 insert)
-            for t in imported_tasks:
-                if "id" in t:
-                    del t["id"]
-                supabase.table("tasks").insert(t).execute()
-                
-            # Performances 복원
-            for p in imported_perfs:
-                if "id" in p:
-                    del p["id"]
-                if isinstance(p.get("attachments"), list):
-                    p["attachments"] = json.dumps(p["attachments"], ensure_ascii=False)
-                supabase.table("performances").insert(p).execute()
-                
-            # Memo 복원
-            if imported_memo:
-                supabase.table("memos").upsert({"id": 1, "content": imported_memo}).execute()
-                
-            st.sidebar.success("데이터가 성공적으로 복원되었습니다!")
-            st.rerun()
-        except Exception as e:
-            st.sidebar.error(f"데이터 복원 중 오류가 발생했습니다: {e}")
-
-
 # ==========================================
 # [모드 1] 업무 진행 관리
 # ==========================================
@@ -492,6 +426,71 @@ if app_mode == "📋 업무 진행 관리":
         if st.button("📊 회의자료 (추진실적 레포트)", use_container_width=True):
             st.session_state.show_meeting_modal = True
             st.rerun()
+
+        # --- 회의자료 바로 밑에 데이터 백업 및 복원 영역 배치 ---
+        st.markdown("---")
+        st.subheader("🔄 데이터 백업 및 복원")
+
+        # 1. 데이터 익스포트 (다운로드)
+        tasks_data_all = load_data()
+        perfs_data_all = load_performances()
+        memo_data_all = load_memo_db()
+
+        backup_payload = {
+            "version": "1.0",
+            "export_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "tasks": tasks_data_all,
+            "performances": perfs_data_all,
+            "memo": memo_data_all
+        }
+
+        backup_json_str = json.dumps(backup_payload, ensure_ascii=False, indent=4)
+        today_str = datetime.now().strftime("%Y%m%d")
+
+        st.download_button(
+            label="📤 데이터 백업 (JSON 다운로드)",
+            data=backup_json_str,
+            file_name=f"HYOs_backup_{today_str}.json",
+            mime="application/json",
+            use_container_width=True,
+            help="현재 등록된 모든 업무, 실적, 메모 데이터를 백업 파일로 저장합니다."
+        )
+
+        # 2. 데이터 임포트 (업로드 및 복원)
+        uploaded_backup_file = st.file_uploader("📥 데이터 복원 (JSON 업로드)", type=["json"], help="백업했던 JSON 파일을 업로드하여 데이터를 복원합니다.")
+
+        if uploaded_backup_file is not None:
+            if st.button("⚠️ 업로드된 데이터로 복원 실행", use_container_width=True, type="primary"):
+                try:
+                    content = uploaded_backup_file.read().decode("utf-8")
+                    backup_data = json.loads(content)
+                    
+                    imported_tasks = backup_data.get("tasks", [])
+                    imported_perfs = backup_data.get("performances", [])
+                    imported_memo = backup_data.get("memo", "")
+                    
+                    # Tasks 복원
+                    for t in imported_tasks:
+                        if "id" in t:
+                            del t["id"]
+                        supabase.table("tasks").insert(t).execute()
+                        
+                    # Performances 복원
+                    for p in imported_perfs:
+                        if "id" in p:
+                            del p["id"]
+                        if isinstance(p.get("attachments"), list):
+                            p["attachments"] = json.dumps(p["attachments"], ensure_ascii=False)
+                        supabase.table("performances").insert(p).execute()
+                        
+                    # Memo 복원
+                    if imported_memo:
+                        supabase.table("memos").upsert({"id": 1, "content": imported_memo}).execute()
+                        
+                    st.success("데이터가 성공적으로 복원되었습니다!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"데이터 복원 중 오류가 발생했습니다: {e}")
 
     tasks = load_data()
 
@@ -739,7 +738,7 @@ if app_mode == "📋 업무 진행 관리":
                     with acol2:
                         new_sub_edate = st.date_input("새 세부 종료일", value=date.today())
 
-                    submitted_sub = st.form_submit_button("➕ 새부 업무 추가하기", use_container_width=True)
+                    submitted_sub = st.form_submit_button("➕ 세부 업무 추가하기", use_container_width=True)
                     if submitted_sub:
                         if new_sub_name.strip():
                             subtasks.append({
